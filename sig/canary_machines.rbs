@@ -1,0 +1,53 @@
+module CanaryMachines
+  VERSION: String
+  CAPACITY: Integer
+
+  type outcome = :undecided | :cleared | :regressed | :truncated
+  type action = :continue | :promote | :rollback | :hold
+  type reason = :evidence | :limit | :guardrail | :guardrail_no_data | :sampling | :no_tests
+  type on_limit = :hold | :rollback | :promote
+  type guardrail = :clear | :no_data | :breached
+  type refusal = :stale_generation | :time_regression | :unknown_test | :wrong_model | :concluded | :overflow
+
+  class Status < Data
+    attr_reader outcome: outcome
+    attr_reader hits: Integer
+    attr_reader misses: Integer
+    attr_reader samples: Integer
+    attr_reader llr_micro: Integer
+    attr_reader decided_at: Integer?
+    def decided?: () -> bool
+  end
+
+  class Recommendation < Data
+    attr_reader action: action
+    attr_reader reason: reason
+    attr_reader test: Integer?
+    def promote?: () -> bool
+    def rollback?: () -> bool
+    def continue?: () -> bool
+    def hold?: () -> bool
+  end
+
+  class Bounds < Data
+    attr_reader false_rollback: Rational?
+    attr_reader false_promote: Rational?
+  end
+
+  class Canary
+    def self.new: (Integer generation) -> Canary
+    def add_reference: (Rational acceptable, Rational unacceptable, alpha: Rational, beta: Rational, limit: Integer, ?on_limit: on_limit) -> (Integer | :full)
+    def add_paired: (Rational acceptable, Rational unacceptable, alpha: Rational, beta: Rational, limit: Integer, ?on_limit: on_limit) -> (Integer | :full)
+    def observe_trials: (Integer generation, Integer at, Integer test, good: Integer, total: Integer) -> (Status | refusal)
+    def observe_pairs: (Integer generation, Integer at, Integer test, canary_only: Integer, baseline_only: Integer, concordant: Integer) -> (Status | refusal)
+    def recommend: (?guardrail guardrail) -> Recommendation
+    def restart: (Integer generation) -> (:ok | :stale_generation)
+    def status: (Integer test) -> Status?
+    def bounds: (Integer test) -> Bounds?
+    def thresholds: (Integer test) -> [Integer, Integer]?
+    def generation: () -> Integer
+    def last: () -> Integer?
+    def size: () -> Integer
+    def capacity: () -> Integer
+  end
+end
