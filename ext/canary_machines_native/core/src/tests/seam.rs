@@ -4,7 +4,7 @@
 use sliderule_machines::ln_ratio;
 
 use super::{paired, plan, reference, tenfold, trials};
-use crate::{FRACTION_BITS, Interval, OnLimit, Plan, Refusal, Sprt, micro_nats};
+use crate::{FRACTION_BITS, Interval, OnLimit, Plan, Sprt, micro_nats};
 
 fn kernel(nums: [u64; 2], dens: [u64; 2]) -> Interval {
     ln_ratio::<FRACTION_BITS>(&nums, &dens)
@@ -66,13 +66,6 @@ fn a_look_is_the_conversion_of_the_weighted_intervals() {
     let lo = plan.hit().lo + 11 * plan.miss().lo;
     let hi = plan.hit().hi + 11 * plan.miss().hi;
     assert_eq!(look.llr_micro, micro_nats(i128::midpoint(lo, hi)));
-}
-
-#[test]
-#[allow(deprecated)]
-fn the_old_refusal_name_is_the_same_type() {
-    let old: crate::Refused = Refusal::Full;
-    assert_eq!(old, Refusal::Full);
 }
 
 #[test]

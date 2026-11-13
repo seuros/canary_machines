@@ -87,6 +87,8 @@ assert!(plan.hit().hi < plan.upper().lo);
 ## Use
 
 ```rust
+use core::time::Duration;
+
 use canary_machines::{
     Action, Canary, Counts, Guardrail, Model, Observation, OnLimit, Outcome, Plan, Rate,
 };
@@ -100,8 +102,11 @@ let errors = canary.add(plan).expect("room");
 assert_eq!(canary.recommend(Guardrail::Clear).action, Action::Continue);
 
 let clean = Observation::Trials(Counts::new(734, 734).expect("good <= total"));
-let status = canary.observe(1, 60, errors, clean).expect("current generation");
+// The instant is monotonic time since an epoch the caller picks.
+let at = Duration::from_secs(60);
+let status = canary.observe(1, at, errors, clean).expect("current generation");
 assert_eq!(status.look.outcome, Outcome::Cleared);
+assert_eq!(status.decided_at, Some(at));
 assert_eq!(canary.recommend(Guardrail::Clear).action, Action::Promote);
 assert_eq!(canary.recommend(Guardrail::NoData).action, Action::Hold);
 assert_eq!(canary.recommend(Guardrail::Breached).action, Action::Rollback);
@@ -113,11 +118,15 @@ assert_eq!(canary.recommend(Guardrail::Breached).action, Action::Rollback);
   refuses a stale generation, a backwards instant, an unknown test, the wrong
   observation kind, a concluded test and a 64-bit overflow, and a refusal
   changes nothing. `restart` moves to a greater generation and clears evidence.
+  Instants (`observe`'s `at`, `Canary::last`, `Status::decided_at`) are
+  `core::time::Duration` since an epoch the caller picks. A plan's `limit`
+  counts samples and a generation is an opaque number; neither is time.
 - `recommend` is pure. A breached `Guardrail`, a regressed test or a truncated
   `OnLimit::Rollback` test recommends rollback; an undecided test recommends
   continuing; a truncated `OnLimit::Hold` test, a guardrail without data or an
   empty canary recommends holding; only what is left is a promotion.
-  `Guardrail` converts from `budget_machines::State` and `Standing`.
+  `Guardrail` converts from `budget_machines::State` and `Standing`, both
+  re-exported here along with `Counts` and `Objective`.
 
 This is a policy core with an initial, unstable API. It cannot check that the
 sampling model holds, and it does not collect metrics, shift traffic, promote

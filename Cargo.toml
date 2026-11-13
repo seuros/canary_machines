@@ -10,7 +10,7 @@ license = "MIT"
 canary-machines = { path = "ext/canary_machines_native/core" }
 magnus = { version = "0.9.3", default-features = false }
 rb-sys = { version = "0.9.130", default-features = false, features = ["stable-api-compiled-fallback"] }
-budget-machines = ">=0.2"
+budget-machines = ">=0.4"
 sliderule-machines = ">=0.2"
 [workspace.lints.rust]
 unsafe_code = "deny"

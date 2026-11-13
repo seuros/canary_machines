@@ -139,7 +139,6 @@ pub enum OnLimit {
 
 /// Why a plan cannot be built.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
 pub enum Invalid {
     /// The acceptable hypothesis is not strictly below the unacceptable one.
     Hypotheses,

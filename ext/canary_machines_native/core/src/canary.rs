@@ -1,5 +1,7 @@
 //! A bounded set of tests for one rollout, and the recommendation they add up to.
 
+use core::time::Duration;
+
 use budget_machines::{Standing, State};
 
 use crate::{Observation, OnLimit, Outcome, Plan, Refusal, Sprt, sprt::Look};
@@ -84,13 +86,13 @@ pub struct Status {
     /// Evidence as of the last accepted observation.
     pub look: Look,
     /// Instant the outcome latched; `None` while undecided.
-    pub decided_at: Option<u64>,
+    pub decided_at: Option<Duration>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Slot {
     sprt: Sprt,
-    decided_at: Option<u64>,
+    decided_at: Option<Duration>,
 }
 
 impl Slot {
@@ -105,12 +107,12 @@ impl Slot {
 /// Up to `M` sequential tests for one rollout generation.
 ///
 /// The generation is an opaque number naming the rollout attempt; instants
-/// are whatever monotone unit the caller counts in. The canary has no clock
-/// and takes no action.
+/// are monotonic time since an epoch the caller picks. The canary has no
+/// clock and takes no action.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Canary<const M: usize> {
     generation: u64,
-    last: Option<u64>,
+    last: Option<Duration>,
     len: usize,
     slots: [Option<Slot>; M],
 }
@@ -135,7 +137,7 @@ impl<const M: usize> Canary<M> {
 
     /// Instant of the last accepted observation.
     #[must_use]
-    pub const fn last(&self) -> Option<u64> {
+    pub const fn last(&self) -> Option<Duration> {
         self.last
     }
 
@@ -194,7 +196,7 @@ impl<const M: usize> Canary<M> {
     pub fn observe(
         &mut self,
         generation: u64,
-        at: u64,
+        at: Duration,
         index: usize,
         observation: Observation,
     ) -> Result<Status, Refusal> {

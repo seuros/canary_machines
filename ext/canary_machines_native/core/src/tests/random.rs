@@ -6,7 +6,15 @@ use super::{
     std::vec::Vec,
     trials,
 };
+use core::time::Duration;
+
 use crate::{Canary, Guardrail, Observation, OnLimit, Outcome, Plan, Refusal, Sprt};
+
+/// The model counts whole ticks; the canary is handed the same instants as
+/// `Duration`s. A tick is not a whole second, so instants carry.
+const fn t(ticks: u64) -> Duration {
+    Duration::from_millis(ticks * 400)
+}
 
 const POLICIES: [OnLimit; 3] = [OnLimit::Hold, OnLimit::Rollback, OnLimit::Promote];
 const GUARDRAILS: [Guardrail; 3] = [Guardrail::Clear, Guardrail::NoData, Guardrail::Breached];
@@ -110,7 +118,7 @@ fn randomized_canary_matches_the_naive_model() {
             };
             let before = canary;
             let expected = fleet.observe(generation, at, index, is_paired, counts);
-            let actual = canary.observe(generation, at, index, observation);
+            let actual = canary.observe(generation, t(at), index, observation);
             if fleet.tests.iter().any(|test| test.doubtful) {
                 doubtful += 1;
                 break;
@@ -126,7 +134,7 @@ fn randomized_canary_matches_the_naive_model() {
                         Outcome::Truncated => truncated += 1,
                         Outcome::Undecided => {}
                     }
-                    assert_eq!(status.decided_at, test.decided_at);
+                    assert_eq!(status.decided_at, test.decided_at.map(t));
                     assert_eq!(
                         (status.look.hits, status.look.misses, status.look.samples),
                         (test.hits, test.misses, test.samples)
@@ -144,7 +152,7 @@ fn randomized_canary_matches_the_naive_model() {
             }
             assert_eq!(
                 (canary.generation(), canary.last()),
-                (fleet.generation, fleet.last)
+                (fleet.generation, fleet.last.map(t))
             );
             for guardrail in GUARDRAILS {
                 assert_eq!(canary.recommend(guardrail), fleet.recommend(guardrail));

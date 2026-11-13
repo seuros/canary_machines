@@ -6,7 +6,7 @@ mod ln;
 mod plan;
 mod sprt;
 
-pub use budget_machines::Counts;
+pub use budget_machines::{Counts, Objective, Standing, State};
 pub use canary::{Action, Canary, Guardrail, Reason, Recommendation, Status};
 pub use ln::{FRACTION_BITS, Interval, micro_nats};
 pub use plan::{Bounds, Fraction, Invalid, Model, OddsRatio, OnLimit, Plan, Rate};
@@ -14,7 +14,6 @@ pub use sprt::{Look, Observation, Outcome, Pairs, Sprt};
 
 /// A refused call. The receiver is left exactly as it was.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
 pub enum Refusal {
     /// The generation is not the canary's current one, or does not move forward.
     StaleGeneration,
@@ -32,9 +31,21 @@ pub enum Refusal {
     Overflow,
 }
 
-/// The former name of [`Refusal`].
-#[deprecated(note = "renamed to `Refusal`")]
-pub type Refused = Refusal;
+impl core::fmt::Display for Refusal {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(match self {
+            Self::StaleGeneration => "the generation is not current or does not move forward",
+            Self::TimeRegression => "the instant precedes the previous observation",
+            Self::Full => "every test slot is taken",
+            Self::UnknownTest => "no test is registered at that index",
+            Self::WrongModel => "the observation is not the kind the test's model takes",
+            Self::Concluded => "the test already latched an outcome",
+            Self::Overflow => "the sample count does not fit in 64 bits",
+        })
+    }
+}
+
+impl core::error::Error for Refusal {}
 
 #[cfg(test)]
 mod tests;

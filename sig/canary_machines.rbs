@@ -1,20 +1,136 @@
 module CanaryMachines
   VERSION: String
   CAPACITY: Integer
+  # Fraction bits of every Interval end.
+  FRACTION_BITS: Integer
 
   type outcome = :undecided | :cleared | :regressed | :truncated
   type action = :continue | :promote | :rollback | :hold
   type reason = :evidence | :limit | :guardrail | :guardrail_no_data | :sampling | :no_tests
   type on_limit = :hold | :rollback | :promote
   type guardrail = :clear | :no_data | :breached
-  type refusal = :stale_generation | :time_regression | :unknown_test | :wrong_model | :concluded | :overflow
+  # Every symbol that means "this call was not honoured and changed nothing":
+  # one per variant of the core's `Refusal`. Each method below lists exactly
+  # the ones it can answer.
+  type refusal = :stale_generation | :time_regression | :full | :unknown_test | :wrong_model | :concluded
+               | :overflow
+  type model = Model::Reference | Model::Paired
 
-  class Status < Data
+  # Anything with `good` and `total` readers: a Counts, or a BudgetMachines::Counts.
+  interface _Counts
+    def good: () -> Integer
+    def total: () -> Integer
+  end
+
+  # Anything with `good` and `per` readers, such as a BudgetMachines::Objective.
+  interface _Objective
+    def good: () -> Integer
+    def per: () -> Integer
+  end
+
+  # Millionths of a nat for a value in units of 2**-FRACTION_BITS nat, rounded
+  # down and saturating at the limits of a signed 64-bit Integer.
+  def self.micro_nats: (Integer value) -> Integer
+
+  # `0 < num < den`, both in 0..2**32-1; anything else raises TypeError or RangeError.
+  class Rate < Data
+    attr_reader num: Integer
+    attr_reader den: Integer
+    def self.new: (Integer num, Integer den) -> Rate
+                | (num: Integer, den: Integer) -> Rate
+    # The failure rate an objective tolerates; nil when it tolerates every event.
+    def self.failure_of: (_Objective objective) -> Rate?
+  end
+
+  # Both parts in 1..2**32-1; anything else raises TypeError or RangeError.
+  class OddsRatio < Data
+    attr_reader num: Integer
+    attr_reader den: Integer
+    def self.new: (Integer num, Integer den) -> OddsRatio
+                | (num: Integer, den: Integer) -> OddsRatio
+  end
+
+  # `good <= total`, both in 0..2**64-1; anything else raises TypeError or RangeError.
+  class Counts < Data
+    attr_reader good: Integer
+    attr_reader total: Integer
+    def self.new: (Integer good, Integer total) -> Counts
+                | (good: Integer, total: Integer) -> Counts
+  end
+
+  # Three counts in 0..2**64-1 whose sum is too; anything else raises.
+  class Pairs < Data
+    attr_reader canary_only: Integer
+    attr_reader baseline_only: Integer
+    attr_reader concordant: Integer
+    def self.new: (Integer canary_only, Integer baseline_only, Integer concordant) -> Pairs
+                | (canary_only: Integer, baseline_only: Integer, concordant: Integer) -> Pairs
+    def total: () -> Integer
+  end
+
+  module Model
+    class Reference < Data
+      attr_reader acceptable: Rate
+      attr_reader unacceptable: Rate
+      def self.new: (Rate acceptable, Rate unacceptable) -> Reference
+                  | (acceptable: Rate, unacceptable: Rate) -> Reference
+    end
+
+    class Paired < Data
+      attr_reader acceptable: OddsRatio
+      attr_reader unacceptable: OddsRatio
+      def self.new: (OddsRatio acceptable, OddsRatio unacceptable) -> Paired
+                  | (acceptable: OddsRatio, unacceptable: OddsRatio) -> Paired
+    end
+  end
+
+  class Interval < Data
+    attr_reader lo: Integer
+    attr_reader hi: Integer
+  end
+
+  class Fraction < Data
+    attr_reader num: Integer
+    attr_reader den: Integer
+  end
+
+  class Bounds < Data
+    attr_reader false_rollback: Fraction?
+    attr_reader false_promote: Fraction?
+  end
+
+  # The arguments of the core's `Plan::new`, in order. Raises RangeError when
+  # the core answers `Invalid`: hypotheses out of order or too close to tell
+  # apart, `alpha + beta >= 1`, or a zero limit.
+  class Plan < Data
+    attr_reader model: model
+    attr_reader alpha: Rate
+    attr_reader beta: Rate
+    attr_reader limit: Integer
+    attr_reader on_limit: on_limit
+    def self.new: (model model, Rate alpha, Rate beta, Integer limit, on_limit on_limit) -> Plan
+                | (model: model, alpha: Rate, beta: Rate, limit: Integer, on_limit: on_limit) -> Plan
+    def upper: () -> Interval
+    def lower: () -> Interval
+    def hit: () -> Interval
+    def miss: () -> Interval
+    def upper_micro: () -> Integer
+    def lower_micro: () -> Integer
+    def bounds: () -> Bounds
+  end
+
+  class Look < Data
     attr_reader outcome: outcome
     attr_reader hits: Integer
     attr_reader misses: Integer
     attr_reader samples: Integer
     attr_reader llr_micro: Integer
+    def decided?: () -> bool
+  end
+
+  class Status < Data
+    attr_reader look: Look
+    # Instant the outcome latched, Integer nanoseconds; nil while undecided.
     attr_reader decided_at: Integer?
     def decided?: () -> bool
   end
@@ -29,25 +145,46 @@ module CanaryMachines
     def hold?: () -> bool
   end
 
-  class Bounds < Data
-    attr_reader false_rollback: Rational?
-    attr_reader false_promote: Rational?
+  module Guardrail
+    # The core's `From<State>` and `From<Standing>`: a budget rule state
+    # (:no_data, :quiet, :firing) or an account standing (:no_data, or a value
+    # with a `remaining` or an `overspent` reader).
+    def self.from: (untyped state_or_standing) -> guardrail
+  end
+
+  # One sequential test on its own.
+  class Sprt
+    def self.new: (Plan plan) -> Sprt
+    def plan: () -> Plan
+    def outcome: () -> outcome
+    def look: () -> Look
+    # One method per variant of the core's `Observation`. Honoured: the Look
+    # after the batch. Refused: :concluded, :wrong_model, :overflow.
+    def observe_trials: (_Counts counts) -> (Look | :concluded | :wrong_model | :overflow)
+    def observe_pairs: (Pairs pairs) -> (Look | :concluded | :wrong_model | :overflow)
+    # Drops the evidence and the latched outcome. Always honoured.
+    def reset: () -> nil
   end
 
   class Canary
     def self.new: (Integer generation) -> Canary
-    def add_reference: (Rational acceptable, Rational unacceptable, alpha: Rational, beta: Rational, limit: Integer, ?on_limit: on_limit) -> (Integer | :full)
-    def add_paired: (Rational acceptable, Rational unacceptable, alpha: Rational, beta: Rational, limit: Integer, ?on_limit: on_limit) -> (Integer | :full)
-    def observe_trials: (Integer generation, Integer at, Integer test, good: Integer, total: Integer) -> (Status | refusal)
-    def observe_pairs: (Integer generation, Integer at, Integer test, canary_only: Integer, baseline_only: Integer, concordant: Integer) -> (Status | refusal)
-    def recommend: (?guardrail guardrail) -> Recommendation
+    # Honoured: the test's index. Refused: :full.
+    def add: (Plan plan) -> (Integer | :full)
+    def plan: (Integer index) -> Plan?
+    def status: (Integer index) -> Status?
+    # One method per variant of the core's `Observation`. `at` is Integer
+    # nanoseconds of monotonic time, as is `last`. Honoured: the test's Status.
+    # Refused: :stale_generation, :time_regression, :unknown_test, :wrong_model,
+    # :concluded, :overflow.
+    def observe_trials: (Integer generation, Integer at, Integer index, _Counts counts) -> (Status | :stale_generation | :time_regression | :unknown_test | :wrong_model | :concluded | :overflow)
+    def observe_pairs: (Integer generation, Integer at, Integer index, Pairs pairs) -> (Status | :stale_generation | :time_regression | :unknown_test | :wrong_model | :concluded | :overflow)
+    # Honoured: :ok. Refused: :stale_generation.
     def restart: (Integer generation) -> (:ok | :stale_generation)
-    def status: (Integer test) -> Status?
-    def bounds: (Integer test) -> Bounds?
-    def thresholds: (Integer test) -> [Integer, Integer]?
+    def recommend: (guardrail guardrail) -> Recommendation
     def generation: () -> Integer
     def last: () -> Integer?
     def size: () -> Integer
+    def empty?: () -> bool
     def capacity: () -> Integer
   end
 end

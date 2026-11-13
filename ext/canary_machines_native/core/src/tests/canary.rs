@@ -1,9 +1,16 @@
 //! The bounded set of tests: refusals, restarts and recommendations.
 
+use core::time::Duration;
+
 use budget_machines::{Standing, State};
 
 use super::{paired, pairs, plan, tenfold, trials};
 use crate::{Action, Canary, Guardrail, OnLimit, Outcome, Reason, Recommendation, Refusal};
+
+/// Test time in whole seconds since the epoch the test picked.
+const fn t(seconds: u64) -> Duration {
+    Duration::from_secs(seconds)
+}
 
 #[test]
 fn canary_refusals_change_nothing() {
@@ -30,28 +37,28 @@ fn canary_refusals_change_nothing() {
     assert_eq!((canary.plan(2), canary.status(2)), (None, None));
 
     let seen = canary
-        .observe(7, 50, 0, trials(1, 5))
+        .observe(7, t(50), 0, trials(1, 5))
         .unwrap_or_else(|_| panic!("accepted"));
     assert_eq!((seen.look.samples, seen.decided_at), (5, None));
     let before = canary;
     assert_eq!(
-        canary.observe(6, 60, 0, trials(1, 5)),
+        canary.observe(6, t(60), 0, trials(1, 5)),
         Err(Refusal::StaleGeneration)
     );
     assert_eq!(
-        canary.observe(8, 60, 0, trials(1, 5)),
+        canary.observe(8, t(60), 0, trials(1, 5)),
         Err(Refusal::StaleGeneration)
     );
     assert_eq!(
-        canary.observe(7, 49, 0, trials(1, 5)),
+        canary.observe(7, t(49), 0, trials(1, 5)),
         Err(Refusal::TimeRegression)
     );
     assert_eq!(
-        canary.observe(7, 60, 2, trials(1, 5)),
+        canary.observe(7, t(60), 2, trials(1, 5)),
         Err(Refusal::UnknownTest)
     );
     assert_eq!(
-        canary.observe(7, 60, 1, trials(1, 5)),
+        canary.observe(7, t(60), 1, trials(1, 5)),
         Err(Refusal::WrongModel)
     );
     assert_eq!(canary.restart(7), Err(Refusal::StaleGeneration));
@@ -60,25 +67,25 @@ fn canary_refusals_change_nothing() {
 
     // The same instant is not a regression.
     let done = canary
-        .observe(7, 50, 0, trials(1, 1))
+        .observe(7, t(50), 0, trials(1, 1))
         .unwrap_or_else(|_| panic!("accepted"));
     assert_eq!(
         (done.look.outcome, done.decided_at),
-        (Outcome::Regressed, Some(50))
+        (Outcome::Regressed, Some(t(50)))
     );
     let before = canary;
     assert_eq!(
-        canary.observe(7, 70, 0, trials(0, 1)),
+        canary.observe(7, t(70), 0, trials(0, 1)),
         Err(Refusal::Concluded)
     );
     assert_eq!(canary, before);
     assert_eq!(
         canary
-            .observe(7, u64::MAX, 1, pairs(0, 0, 1))
+            .observe(7, Duration::MAX, 1, pairs(0, 0, 1))
             .map(|s| s.decided_at),
         Ok(None)
     );
-    assert_eq!(canary.last(), Some(u64::MAX));
+    assert_eq!(canary.last(), Some(Duration::MAX));
 
     assert_eq!(canary.restart(u64::MAX), Ok(()));
     assert_eq!(canary.restart(u64::MAX), Err(Refusal::StaleGeneration));
@@ -89,10 +96,14 @@ fn canary_refusals_change_nothing() {
     );
     // Time did not rewind with the generation.
     assert_eq!(
-        canary.observe(u64::MAX, 5, 0, trials(0, 1)),
+        canary.observe(u64::MAX, t(5), 0, trials(0, 1)),
         Err(Refusal::TimeRegression)
     );
-    assert!(canary.observe(u64::MAX, u64::MAX, 0, trials(0, 1)).is_ok());
+    assert!(
+        canary
+            .observe(u64::MAX, Duration::MAX, 0, trials(0, 1))
+            .is_ok()
+    );
     assert_eq!(
         Canary::<0>::new(0).add(plan(tenfold(), 1, OnLimit::Hold)),
         Err(Refusal::Full)
@@ -125,9 +136,9 @@ fn recommendation_follows_evidence_limits_and_guardrail() {
     assert_eq!(canary.recommend(Guardrail::Clear), sampling);
     assert_eq!(canary.recommend(Guardrail::NoData), sampling);
 
-    assert!(canary.observe(1, 0, 0, trials(0, 31)).is_ok());
+    assert!(canary.observe(1, t(0), 0, trials(0, 31)).is_ok());
     assert_eq!(canary.recommend(Guardrail::Clear), sampling);
-    assert!(canary.observe(1, 1, 1, pairs(0, 0, 10)).is_ok());
+    assert!(canary.observe(1, t(1), 1, pairs(0, 0, 10)).is_ok());
     let promote = advice(Action::Promote, Reason::Limit, Some(1));
     assert_eq!(canary.recommend(Guardrail::Clear), promote);
     assert_eq!(
@@ -143,8 +154,8 @@ fn recommendation_follows_evidence_limits_and_guardrail() {
     assert_eq!(canary, before);
 
     assert_eq!(canary.restart(2), Ok(()));
-    assert!(canary.observe(2, 2, 0, trials(0, 31)).is_ok());
-    assert!(canary.observe(2, 2, 1, pairs(0, 8, 0)).is_ok());
+    assert!(canary.observe(2, t(2), 0, trials(0, 31)).is_ok());
+    assert!(canary.observe(2, t(2), 1, pairs(0, 8, 0)).is_ok());
     assert_eq!(
         canary.recommend(Guardrail::Clear),
         advice(Action::Promote, Reason::Evidence, None)
@@ -153,20 +164,20 @@ fn recommendation_follows_evidence_limits_and_guardrail() {
     assert_eq!(canary.restart(3), Ok(()));
     assert_eq!(canary.add(plan(tenfold(), 5, OnLimit::Hold)), Ok(2));
     assert_eq!(canary.add(plan(tenfold(), 5, OnLimit::Rollback)), Ok(3));
-    assert!(canary.observe(3, 3, 0, trials(0, 31)).is_ok());
-    assert!(canary.observe(3, 3, 1, pairs(0, 8, 0)).is_ok());
-    assert!(canary.observe(3, 3, 2, trials(0, 5)).is_ok());
+    assert!(canary.observe(3, t(3), 0, trials(0, 31)).is_ok());
+    assert!(canary.observe(3, t(3), 1, pairs(0, 8, 0)).is_ok());
+    assert!(canary.observe(3, t(3), 2, trials(0, 5)).is_ok());
     assert_eq!(canary.recommend(Guardrail::Clear), sampling);
-    assert!(canary.observe(3, 4, 3, trials(0, 4)).is_ok());
+    assert!(canary.observe(3, t(4), 3, trials(0, 4)).is_ok());
     assert_eq!(canary.recommend(Guardrail::Clear), sampling);
     let held = canary;
-    assert!(canary.observe(3, 5, 3, trials(0, 1)).is_ok());
+    assert!(canary.observe(3, t(5), 3, trials(0, 1)).is_ok());
     assert_eq!(
         canary.recommend(Guardrail::NoData),
         advice(Action::Rollback, Reason::Limit, Some(3))
     );
     let mut canary = held;
-    assert!(canary.observe(3, 5, 3, trials(0, 30)).is_ok());
+    assert!(canary.observe(3, t(5), 3, trials(0, 30)).is_ok());
     assert_eq!(
         canary.status(3).map(|status| status.look.outcome),
         Some(Outcome::Cleared)
@@ -176,7 +187,7 @@ fn recommendation_follows_evidence_limits_and_guardrail() {
         advice(Action::Hold, Reason::Limit, Some(2))
     );
     let mut canary = held;
-    assert!(canary.observe(3, 5, 3, trials(2, 2)).is_ok());
+    assert!(canary.observe(3, t(5), 3, trials(2, 2)).is_ok());
     assert_eq!(
         canary.recommend(Guardrail::Clear),
         advice(Action::Rollback, Reason::Evidence, Some(3))

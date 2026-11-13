@@ -164,7 +164,8 @@ impl Sprt {
             (Model::Paired { .. }, Observation::Pairs(pairs)) => {
                 (pairs.canary_only(), pairs.baseline_only(), pairs.total())
             }
-            _ => return Err(Refusal::WrongModel),
+            (Model::Reference { .. }, Observation::Pairs(_))
+            | (Model::Paired { .. }, Observation::Trials(_)) => return Err(Refusal::WrongModel),
         };
         let samples = self.samples.checked_add(batch).ok_or(Refusal::Overflow)?;
         // hits and misses never exceed samples, so these cannot wrap.
