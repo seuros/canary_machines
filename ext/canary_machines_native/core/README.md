@@ -61,6 +61,29 @@ decision whose exact ratio is within about `samples * 2^-47` of a threshold,
 and can never produce one the exact arithmetic would not. Results are
 identical on every platform.
 
+The seam is open. `Plan::upper`, `lower`, `hit` and `miss` return the
+`sliderule_machines::Interval`s the test runs on (re-exported here as
+`Interval`), and `micro_nats` is the conversion behind `upper_micro`,
+`lower_micro` and `Look::llr_micro`, so a caller holding its own `ln_ratio`
+result can compare it with a plan without copying any arithmetic:
+
+```rust
+use canary_machines::{FRACTION_BITS, Interval, Model, OnLimit, Plan, Rate, micro_nats};
+use sliderule_machines::ln_ratio;
+
+let rate = |num, den| Rate::new(num, den).expect("0 < num < den");
+let model = Model::Reference { acceptable: rate(1, 100), unacceptable: rate(1, 10) };
+let plan = Plan::new(model, rate(5, 100), rate(5, 100), 1000, OnLimit::Hold).expect("valid");
+
+// ln((1 - beta) / alpha) = ln(95/100 * 100/5), factor for factor.
+let upper: Interval = ln_ratio::<FRACTION_BITS>(&[95, 100], &[100, 5]);
+assert_eq!(plan.upper(), upper);
+assert_eq!(plan.upper_micro(), micro_nats(upper.hi));
+assert_eq!(plan.lower_micro(), micro_nats(plan.lower().lo));
+// One failure weighs ln(p1 / p0) = ln(10): not enough alone to reach ln(19).
+assert!(plan.hit().hi < plan.upper().lo);
+```
+
 ## Use
 
 ```rust

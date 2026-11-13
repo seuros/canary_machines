@@ -20,10 +20,20 @@ pub const fn ln_ratio(nums: [u64; 2], dens: [u64; 2]) -> Interval {
     sliderule_machines::ln_ratio::<FRACTION_BITS>(&nums, &dens)
 }
 
-/// Millionths of a nat for a `2^-FRACTION_BITS` value, rounded down and
-/// saturating at the limits of `i64`.
-pub fn micro(value: i128) -> i64 {
-    // Split the shift so the product cannot overflow: |value| < 2^122.
-    let scaled = ((value >> 20) * 1_000_000) >> (FRACTION_BITS - 20);
+/// Millionths of a nat for a value in units of `2^-FRACTION_BITS` nat, rounded
+/// down (towards negative infinity) and saturating at the limits of `i64`.
+///
+/// This is the one conversion behind every `*_micro` reading of this crate:
+/// [`Plan::upper_micro`](crate::Plan::upper_micro) is `micro_nats` of the `hi`
+/// end of [`Plan::upper`](crate::Plan::upper), and so on. Apply it to either end
+/// of a `sliderule_machines::ln_ratio::<FRACTION_BITS>` interval to compare
+/// that logarithm with them.
+#[must_use]
+pub fn micro_nats(value: i128) -> i64 {
+    // Exact floor: scale the whole nats and the fraction apart, so neither
+    // product overflows (|value| < 2^122) and no low bit is dropped first.
+    let whole = value >> FRACTION_BITS;
+    let fraction = value & ((1 << FRACTION_BITS) - 1);
+    let scaled = whole * 1_000_000 + ((fraction * 1_000_000) >> FRACTION_BITS);
     i64::try_from(scaled).unwrap_or(if scaled < 0 { i64::MIN } else { i64::MAX })
 }

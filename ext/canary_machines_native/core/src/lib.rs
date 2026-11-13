@@ -8,14 +8,14 @@ mod sprt;
 
 pub use budget_machines::Counts;
 pub use canary::{Action, Canary, Guardrail, Reason, Recommendation, Status};
-pub use ln::FRACTION_BITS;
+pub use ln::{FRACTION_BITS, Interval, micro_nats};
 pub use plan::{Bounds, Fraction, Invalid, Model, OddsRatio, OnLimit, Plan, Rate};
 pub use sprt::{Look, Observation, Outcome, Pairs, Sprt};
 
 /// A refused call. The receiver is left exactly as it was.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
-pub enum Refused {
+pub enum Refusal {
     /// The generation is not the canary's current one, or does not move forward.
     StaleGeneration,
     /// The observation instant is earlier than the previous one.
@@ -31,6 +31,10 @@ pub enum Refused {
     /// The sample count would not fit in 64 bits.
     Overflow,
 }
+
+/// The former name of [`Refusal`].
+#[deprecated(note = "renamed to `Refusal`")]
+pub type Refused = Refusal;
 
 #[cfg(test)]
 mod tests;

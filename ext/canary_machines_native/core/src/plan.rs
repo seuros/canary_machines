@@ -2,7 +2,7 @@
 
 use budget_machines::Objective;
 
-use crate::ln::{Interval, ln_ratio, micro};
+use crate::ln::{Interval, ln_ratio, micro_nats};
 
 /// A probability strictly between zero and one, as an exact ratio.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -180,10 +180,10 @@ pub struct Plan {
     beta: Rate,
     limit: u64,
     on_limit: OnLimit,
-    pub(crate) hit: Interval,
-    pub(crate) miss: Interval,
-    pub(crate) upper: Interval,
-    pub(crate) lower: Interval,
+    hit: Interval,
+    miss: Interval,
+    upper: Interval,
+    lower: Interval,
 }
 
 impl Plan {
@@ -269,18 +269,62 @@ impl Plan {
         self.on_limit
     }
 
+    /// Interval around the upper threshold `ln((1 - beta) / alpha)`, in units
+    /// of `2^-FRACTION_BITS` nat. For `alpha = an / ad` and `beta = bn / bd` it
+    /// is exactly `sliderule_machines::ln_ratio::<FRACTION_BITS>(&[bd - bn, ad],
+    /// &[bd, an])`. A test regresses once its whole log-likelihood interval is
+    /// at or above `hi`.
+    #[must_use]
+    pub const fn upper(&self) -> Interval {
+        self.upper
+    }
+
+    /// Interval around the lower threshold `ln(beta / (1 - alpha))`, in units
+    /// of `2^-FRACTION_BITS` nat: exactly `ln_ratio::<FRACTION_BITS>(&[bn, ad],
+    /// &[bd, ad - an])`. A test is cleared once its whole log-likelihood
+    /// interval is at or below `lo`.
+    #[must_use]
+    pub const fn lower(&self) -> Interval {
+        self.lower
+    }
+
+    /// Interval around the weight of one hit, `ln(p1 / p0)`, in units of
+    /// `2^-FRACTION_BITS` nat; always above zero. `p0 = n0 / d0` and
+    /// `p1 = n1 / d1` are the hit probabilities under `H0` and `H1`: the two
+    /// rates of a [`Model::Reference`], and `num / (num + den)` of each odds
+    /// ratio of a [`Model::Paired`]. Exactly `ln_ratio::<FRACTION_BITS>(&[n1,
+    /// d0], &[d1, n0])`.
+    #[must_use]
+    pub const fn hit(&self) -> Interval {
+        self.hit
+    }
+
+    /// Interval around the weight of one miss, `ln((1 - p1) / (1 - p0))`, in
+    /// units of `2^-FRACTION_BITS` nat; always below zero. Exactly
+    /// `ln_ratio::<FRACTION_BITS>(&[d1 - n1, d0], &[d1, d0 - n0])` for the
+    /// probabilities of [`hit`](Self::hit).
+    ///
+    /// The log-likelihood ratio after `h` hits and `m` misses lies between
+    /// `h * hit().lo + m * miss().lo` and `h * hit().hi + m * miss().hi`.
+    #[must_use]
+    pub const fn miss(&self) -> Interval {
+        self.miss
+    }
+
     /// Log-likelihood ratio the evidence must reach to count as a regression,
-    /// in millionths of a nat: `ln((1 - beta) / alpha)`.
+    /// in millionths of a nat: [`micro_nats`] of the `hi` end of
+    /// [`upper`](Self::upper).
     #[must_use]
     pub fn upper_micro(&self) -> i64 {
-        micro(self.upper.hi)
+        micro_nats(self.upper.hi)
     }
 
     /// Log-likelihood ratio the evidence must fall to to count as cleared, in
-    /// millionths of a nat: `ln(beta / (1 - alpha))`.
+    /// millionths of a nat: [`micro_nats`] of the `lo` end of
+    /// [`lower`](Self::lower).
     #[must_use]
     pub fn lower_micro(&self) -> i64 {
-        micro(self.lower.lo)
+        micro_nats(self.lower.lo)
     }
 
     /// The error bounds this plan guarantees; see [`Bounds`].

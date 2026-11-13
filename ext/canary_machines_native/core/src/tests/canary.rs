@@ -3,7 +3,7 @@
 use budget_machines::{Standing, State};
 
 use super::{paired, pairs, plan, tenfold, trials};
-use crate::{Action, Canary, Guardrail, OnLimit, Outcome, Reason, Recommendation, Refused};
+use crate::{Action, Canary, Guardrail, OnLimit, Outcome, Reason, Recommendation, Refusal};
 
 #[test]
 fn canary_refusals_change_nothing() {
@@ -20,7 +20,7 @@ fn canary_refusals_change_nothing() {
     );
     assert_eq!(
         canary.add(plan(tenfold(), 100, OnLimit::Hold)),
-        Err(Refused::Full)
+        Err(Refusal::Full)
     );
     assert_eq!(canary.len(), 2);
     assert_eq!(
@@ -36,26 +36,26 @@ fn canary_refusals_change_nothing() {
     let before = canary;
     assert_eq!(
         canary.observe(6, 60, 0, trials(1, 5)),
-        Err(Refused::StaleGeneration)
+        Err(Refusal::StaleGeneration)
     );
     assert_eq!(
         canary.observe(8, 60, 0, trials(1, 5)),
-        Err(Refused::StaleGeneration)
+        Err(Refusal::StaleGeneration)
     );
     assert_eq!(
         canary.observe(7, 49, 0, trials(1, 5)),
-        Err(Refused::TimeRegression)
+        Err(Refusal::TimeRegression)
     );
     assert_eq!(
         canary.observe(7, 60, 2, trials(1, 5)),
-        Err(Refused::UnknownTest)
+        Err(Refusal::UnknownTest)
     );
     assert_eq!(
         canary.observe(7, 60, 1, trials(1, 5)),
-        Err(Refused::WrongModel)
+        Err(Refusal::WrongModel)
     );
-    assert_eq!(canary.restart(7), Err(Refused::StaleGeneration));
-    assert_eq!(canary.restart(6), Err(Refused::StaleGeneration));
+    assert_eq!(canary.restart(7), Err(Refusal::StaleGeneration));
+    assert_eq!(canary.restart(6), Err(Refusal::StaleGeneration));
     assert_eq!(canary, before);
 
     // The same instant is not a regression.
@@ -69,7 +69,7 @@ fn canary_refusals_change_nothing() {
     let before = canary;
     assert_eq!(
         canary.observe(7, 70, 0, trials(0, 1)),
-        Err(Refused::Concluded)
+        Err(Refusal::Concluded)
     );
     assert_eq!(canary, before);
     assert_eq!(
@@ -81,7 +81,7 @@ fn canary_refusals_change_nothing() {
     assert_eq!(canary.last(), Some(u64::MAX));
 
     assert_eq!(canary.restart(u64::MAX), Ok(()));
-    assert_eq!(canary.restart(u64::MAX), Err(Refused::StaleGeneration));
+    assert_eq!(canary.restart(u64::MAX), Err(Refusal::StaleGeneration));
     let fresh = canary.status(0).unwrap_or_else(|| panic!("registered"));
     assert_eq!(
         (fresh.look.samples, fresh.look.outcome, fresh.decided_at),
@@ -90,12 +90,12 @@ fn canary_refusals_change_nothing() {
     // Time did not rewind with the generation.
     assert_eq!(
         canary.observe(u64::MAX, 5, 0, trials(0, 1)),
-        Err(Refused::TimeRegression)
+        Err(Refusal::TimeRegression)
     );
     assert!(canary.observe(u64::MAX, u64::MAX, 0, trials(0, 1)).is_ok());
     assert_eq!(
         Canary::<0>::new(0).add(plan(tenfold(), 1, OnLimit::Hold)),
-        Err(Refused::Full)
+        Err(Refusal::Full)
     );
 }
 

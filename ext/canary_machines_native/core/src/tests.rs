@@ -3,11 +3,12 @@ extern crate std;
 use budget_machines::Objective;
 
 use super::*;
-use crate::ln::{ln_ratio, micro};
+use crate::ln::{ln_ratio, micro_nats};
 
 mod canary;
 mod model;
 mod random;
+mod seam;
 
 use model::Rng;
 
@@ -81,10 +82,10 @@ fn log_likelihoods_are_the_shared_kernel_at_48_fraction_bits() {
     assert!((real(interval.lo) - core::f64::consts::LN_2).abs() < 1e-12);
     assert_eq!(ln_ratio([1, 1], [1, 1]), ln_ratio([7, 9], [9, 7]));
     assert!(ln_ratio([u64::MAX, u64::MAX], [1, 1]).hi < 89 << FRACTION_BITS);
-    assert_eq!(micro(1 << FRACTION_BITS), 1_000_000);
-    assert_eq!(micro(-(1 << FRACTION_BITS)), -1_000_000);
-    assert_eq!(micro(i128::MAX >> 6), i64::MAX);
-    assert_eq!(micro(i128::MIN >> 6), i64::MIN);
+    assert_eq!(micro_nats(1 << FRACTION_BITS), 1_000_000);
+    assert_eq!(micro_nats(-(1 << FRACTION_BITS)), -1_000_000);
+    assert_eq!(micro_nats(i128::MAX >> 6), i64::MAX);
+    assert_eq!(micro_nats(i128::MIN >> 6), i64::MIN);
 }
 
 #[test]
@@ -207,7 +208,7 @@ fn reference_test_crosses_each_threshold_at_the_textbook_sample() {
         (second.outcome, second.llr_micro),
         (Outcome::Regressed, 4_605_170)
     );
-    assert_eq!(sprt.observe(trials(0, 1)), Err(Refused::Concluded));
+    assert_eq!(sprt.observe(trials(0, 1)), Err(Refusal::Concluded));
     assert_eq!(sprt.look(), second);
 
     // 2.944439 / 0.095310 = 30.9: thirty clean trials are not enough.
@@ -265,10 +266,10 @@ fn paired_test_ignores_concordant_pairs_as_evidence() {
     let before = sprt;
     assert_eq!(
         Sprt::new(*before.plan()).observe(trials(0, 1)),
-        Err(Refused::WrongModel)
+        Err(Refusal::WrongModel)
     );
     let mut single = Sprt::new(plan(tenfold(), 10, OnLimit::Hold));
-    assert_eq!(single.observe(pairs(1, 0, 0)), Err(Refused::WrongModel));
+    assert_eq!(single.observe(pairs(1, 0, 0)), Err(Refusal::WrongModel));
     assert_eq!(single.look().samples, 0);
 }
 
@@ -284,7 +285,7 @@ fn truncation_at_the_limit_and_u64_extremes() {
         sprt.observe(pairs(0, 0, 50)).map(|look| look.outcome),
         Ok(Outcome::Truncated)
     );
-    assert_eq!(sprt.observe(pairs(0, 9, 0)), Err(Refused::Concluded));
+    assert_eq!(sprt.observe(pairs(0, 9, 0)), Err(Refusal::Concluded));
     // A threshold reached on the limit's own look still counts.
     let mut sprt = Sprt::new(plan(tenfold(), 2, OnLimit::Hold));
     assert_eq!(
@@ -297,7 +298,7 @@ fn truncation_at_the_limit_and_u64_extremes() {
         .observe(pairs(0, 0, u64::MAX - 1))
         .unwrap_or_else(|_| panic!("accepted"));
     assert_eq!((quiet.outcome, quiet.llr_micro), (Outcome::Undecided, 0));
-    assert_eq!(sprt.observe(pairs(1, 1, 0)), Err(Refused::Overflow));
+    assert_eq!(sprt.observe(pairs(1, 1, 0)), Err(Refusal::Overflow));
     assert_eq!(sprt.look(), quiet);
     assert_eq!(
         sprt.observe(pairs(0, 0, 1)).map(|look| look.outcome),

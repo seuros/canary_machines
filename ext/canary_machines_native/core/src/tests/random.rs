@@ -6,7 +6,7 @@ use super::{
     std::vec::Vec,
     trials,
 };
-use crate::{Canary, Guardrail, Observation, OnLimit, Outcome, Plan, Refused, Sprt};
+use crate::{Canary, Guardrail, Observation, OnLimit, Outcome, Plan, Refusal, Sprt};
 
 const POLICIES: [OnLimit; 3] = [OnLimit::Hold, OnLimit::Rollback, OnLimit::Promote];
 const GUARDRAILS: [Guardrail; 3] = [Guardrail::Clear, Guardrail::NoData, Guardrail::Breached];
@@ -79,7 +79,7 @@ fn randomized_canary_matches_the_naive_model() {
                 assert_eq!(added, Ok(fleet.tests.len()));
                 fleet.tests.push(naive);
             } else {
-                assert_eq!(added, Err(Refused::Full));
+                assert_eq!(added, Err(Refusal::Full));
             }
         }
         let mut now = 100;

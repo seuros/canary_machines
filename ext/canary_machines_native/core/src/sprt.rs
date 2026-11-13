@@ -2,7 +2,7 @@
 
 use budget_machines::Counts;
 
-use crate::{Model, Plan, Refused, ln::micro};
+use crate::{Model, Plan, Refusal, ln::micro_nats};
 
 /// Outcomes of matched baseline/canary pairs, supplied by the caller.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -138,7 +138,7 @@ impl Sprt {
             hits: self.hits,
             misses: self.misses,
             samples: self.samples,
-            llr_micro: micro(i128::midpoint(lo, hi)),
+            llr_micro: micro_nats(i128::midpoint(lo, hi)),
         }
     }
 
@@ -149,13 +149,13 @@ impl Sprt {
     /// decision but never invent one.
     ///
     /// # Errors
-    /// [`Refused::Concluded`] once an outcome has latched,
-    /// [`Refused::WrongModel`] when the observation is not the kind the plan's
-    /// model takes, and [`Refused::Overflow`] when the sample count would not
+    /// [`Refusal::Concluded`] once an outcome has latched,
+    /// [`Refusal::WrongModel`] when the observation is not the kind the plan's
+    /// model takes, and [`Refusal::Overflow`] when the sample count would not
     /// fit in 64 bits.
-    pub fn observe(&mut self, observation: Observation) -> Result<Look, Refused> {
+    pub fn observe(&mut self, observation: Observation) -> Result<Look, Refusal> {
         if self.outcome != Outcome::Undecided {
-            return Err(Refused::Concluded);
+            return Err(Refusal::Concluded);
         }
         let (hits, misses, batch) = match (self.plan.model(), observation) {
             (Model::Reference { .. }, Observation::Trials(counts)) => {
@@ -164,15 +164,15 @@ impl Sprt {
             (Model::Paired { .. }, Observation::Pairs(pairs)) => {
                 (pairs.canary_only(), pairs.baseline_only(), pairs.total())
             }
-            _ => return Err(Refused::WrongModel),
+            _ => return Err(Refusal::WrongModel),
         };
-        let samples = self.samples.checked_add(batch).ok_or(Refused::Overflow)?;
+        let samples = self.samples.checked_add(batch).ok_or(Refusal::Overflow)?;
         // hits and misses never exceed samples, so these cannot wrap.
         let (hits, misses) = (self.hits + hits, self.misses + misses);
         let (lo, hi) = self.bracket(hits, misses);
-        self.outcome = if lo >= self.plan.upper.hi {
+        self.outcome = if lo >= self.plan.upper().hi {
             Outcome::Regressed
-        } else if hi <= self.plan.lower.lo {
+        } else if hi <= self.plan.lower().lo {
             Outcome::Cleared
         } else if samples >= self.plan.limit() {
             Outcome::Truncated
@@ -192,9 +192,10 @@ impl Sprt {
     /// `2^55` and counts below `2^64`, so nothing here can overflow.
     fn bracket(&self, hits: u64, misses: u64) -> (i128, i128) {
         let (hits, misses) = (i128::from(hits), i128::from(misses));
+        let (hit, miss) = (self.plan.hit(), self.plan.miss());
         (
-            hits * self.plan.hit.lo + misses * self.plan.miss.lo,
-            hits * self.plan.hit.hi + misses * self.plan.miss.hi,
+            hits * hit.lo + misses * miss.lo,
+            hits * hit.hi + misses * miss.hi,
         )
     }
 }

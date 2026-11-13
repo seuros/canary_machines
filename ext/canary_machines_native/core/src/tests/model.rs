@@ -4,7 +4,7 @@ extern crate std;
 
 use std::vec::Vec;
 
-use crate::{Action, Guardrail, OnLimit, Outcome, Reason, Recommendation, Refused};
+use crate::{Action, Guardrail, OnLimit, Outcome, Reason, Recommendation, Refusal};
 
 /// Distance from a threshold below which floating point cannot be trusted to
 /// agree with the exact answer; such looks are not compared.
@@ -88,12 +88,12 @@ impl Naive {
         hits: u64,
         misses: u64,
         other: u64,
-    ) -> Result<(), Refused> {
+    ) -> Result<(), Refusal> {
         if self.outcome != Outcome::Undecided {
-            return Err(Refused::Concluded);
+            return Err(Refusal::Concluded);
         }
         if paired != self.paired {
-            return Err(Refused::WrongModel);
+            return Err(Refusal::WrongModel);
         }
         self.hits += hits;
         self.misses += misses;
@@ -130,14 +130,14 @@ impl Fleet {
         index: usize,
         paired: bool,
         counts: (u64, u64, u64),
-    ) -> Result<(), Refused> {
+    ) -> Result<(), Refusal> {
         if generation != self.generation {
-            return Err(Refused::StaleGeneration);
+            return Err(Refusal::StaleGeneration);
         }
         if self.last.is_some_and(|last| at < last) {
-            return Err(Refused::TimeRegression);
+            return Err(Refusal::TimeRegression);
         }
-        let test = self.tests.get_mut(index).ok_or(Refused::UnknownTest)?;
+        let test = self.tests.get_mut(index).ok_or(Refusal::UnknownTest)?;
         test.observe(paired, counts.0, counts.1, counts.2)?;
         if test.outcome != Outcome::Undecided {
             test.decided_at = Some(at);
@@ -146,9 +146,9 @@ impl Fleet {
         Ok(())
     }
 
-    pub fn restart(&mut self, generation: u64) -> Result<(), Refused> {
+    pub fn restart(&mut self, generation: u64) -> Result<(), Refusal> {
         if generation <= self.generation {
-            return Err(Refused::StaleGeneration);
+            return Err(Refusal::StaleGeneration);
         }
         self.generation = generation;
         for test in &mut self.tests {

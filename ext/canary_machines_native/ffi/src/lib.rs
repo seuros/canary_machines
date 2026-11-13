@@ -2,7 +2,7 @@
 mod canary;
 mod init;
 
-use canary_machines::{OddsRatio, Rate, Refused};
+use canary_machines::{OddsRatio, Rate, Refusal};
 use magnus::{Error, Integer, RModule, Ruby, Symbol, TryConvert, Value, prelude::*};
 
 /// Tests one canary can hold.
@@ -70,15 +70,15 @@ fn symbol_name(ruby: &Ruby, value: Value, message: &'static str) -> Result<Strin
     Ok(symbol.name()?.into_owned())
 }
 
-fn refusal(ruby: &Ruby, refused: Refused) -> Symbol {
+fn refusal(ruby: &Ruby, refused: Refusal) -> Symbol {
     ruby.to_symbol(match refused {
-        Refused::StaleGeneration => "stale_generation",
-        Refused::TimeRegression => "time_regression",
-        Refused::Full => "full",
-        Refused::UnknownTest => "unknown_test",
-        Refused::WrongModel => "wrong_model",
-        Refused::Concluded => "concluded",
-        Refused::Overflow => "overflow",
+        Refusal::StaleGeneration => "stale_generation",
+        Refusal::TimeRegression => "time_regression",
+        Refusal::Full => "full",
+        Refusal::UnknownTest => "unknown_test",
+        Refusal::WrongModel => "wrong_model",
+        Refusal::Concluded => "concluded",
+        Refusal::Overflow => "overflow",
         _ => "refused",
     })
 }

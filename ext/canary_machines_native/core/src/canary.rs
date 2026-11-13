@@ -2,7 +2,7 @@
 
 use budget_machines::{Standing, State};
 
-use crate::{Observation, OnLimit, Outcome, Plan, Refused, Sprt, sprt::Look};
+use crate::{Observation, OnLimit, Outcome, Plan, Refusal, Sprt, sprt::Look};
 
 /// An external guardrail's verdict, passed in by the caller at each decision.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -160,10 +160,10 @@ impl<const M: usize> Canary<M> {
     /// Register a test and return its index.
     ///
     /// # Errors
-    /// [`Refused::Full`] when all `M` slots are taken.
-    pub fn add(&mut self, plan: Plan) -> Result<usize, Refused> {
+    /// [`Refusal::Full`] when all `M` slots are taken.
+    pub fn add(&mut self, plan: Plan) -> Result<usize, Refusal> {
         let index = self.len;
-        let slot = self.slots.get_mut(index).ok_or(Refused::Full)?;
+        let slot = self.slots.get_mut(index).ok_or(Refusal::Full)?;
         *slot = Some(Slot {
             sprt: Sprt::new(plan),
             decided_at: None,
@@ -187,9 +187,9 @@ impl<const M: usize> Canary<M> {
     /// Feed test `index` a batch observed at `at` and look once.
     ///
     /// # Errors
-    /// [`Refused::StaleGeneration`] when `generation` is not the current one,
-    /// [`Refused::TimeRegression`] when `at` is earlier than the last accepted
-    /// observation, [`Refused::UnknownTest`] for an unregistered index, and
+    /// [`Refusal::StaleGeneration`] when `generation` is not the current one,
+    /// [`Refusal::TimeRegression`] when `at` is earlier than the last accepted
+    /// observation, [`Refusal::UnknownTest`] for an unregistered index, and
     /// whatever [`Sprt::observe`] refuses. A refusal changes nothing.
     pub fn observe(
         &mut self,
@@ -197,18 +197,18 @@ impl<const M: usize> Canary<M> {
         at: u64,
         index: usize,
         observation: Observation,
-    ) -> Result<Status, Refused> {
+    ) -> Result<Status, Refusal> {
         if generation != self.generation {
-            return Err(Refused::StaleGeneration);
+            return Err(Refusal::StaleGeneration);
         }
         if self.last.is_some_and(|last| at < last) {
-            return Err(Refused::TimeRegression);
+            return Err(Refusal::TimeRegression);
         }
         let slot = self
             .slots
             .get_mut(index)
             .and_then(Option::as_mut)
-            .ok_or(Refused::UnknownTest)?;
+            .ok_or(Refusal::UnknownTest)?;
         let look = slot.sprt.observe(observation)?;
         if look.outcome != Outcome::Undecided {
             slot.decided_at = Some(at);
@@ -221,11 +221,11 @@ impl<const M: usize> Canary<M> {
     /// evidence. Time keeps moving forward across generations.
     ///
     /// # Errors
-    /// [`Refused::StaleGeneration`] unless `generation` is greater than the
+    /// [`Refusal::StaleGeneration`] unless `generation` is greater than the
     /// current one.
-    pub fn restart(&mut self, generation: u64) -> Result<(), Refused> {
+    pub fn restart(&mut self, generation: u64) -> Result<(), Refusal> {
         if generation <= self.generation {
-            return Err(Refused::StaleGeneration);
+            return Err(Refusal::StaleGeneration);
         }
         self.generation = generation;
         for slot in self.slots.iter_mut().flatten() {
