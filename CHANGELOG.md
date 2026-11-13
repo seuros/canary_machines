@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.2.0](https://github.com/seuros/canary_machines/compare/canary_machines/v0.1.2...canary_machines/v0.2.0) (2026-11-13)
+
+
+### ⚠ BREAKING CHANGES
+
+* see CONVENTIONS: one exhaustive Refusal per crate, Result from every mutator, honoured idempotent repeats only when provable, Duration time, Ruby mirrors the core. No compatibility aliases. Requires budget-machines >= 0.4. Ruby add(plan) replaces add_reference/add_paired; the Refused alias is gone.
+
+### Features
+
+* Duration observation instants, exact micro_nats, Plan, Model, Rate and Sprt as Ruby values ([6a030ec](https://github.com/seuros/canary_machines/commit/6a030ecb2819d7db4bf65b8637191eefa2a10a2d))
+
 ## [0.1.2](https://github.com/seuros/canary_machines/compare/canary_machines/v0.1.1...canary_machines/v0.1.2) (2026-11-13)
 
 
