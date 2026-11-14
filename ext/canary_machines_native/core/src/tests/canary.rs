@@ -36,10 +36,8 @@ fn canary_refusals_change_nothing() {
     );
     assert_eq!((canary.plan(2), canary.status(2)), (None, None));
 
-    let seen = canary
-        .observe(7, t(50), 0, trials(1, 5))
-        .unwrap_or_else(|_| panic!("accepted"));
-    assert_eq!((seen.look.samples, seen.decided_at), (5, None));
+    let seen = canary.observe(7, t(50), 0, trials(1, 5)).expect("accepted");
+    assert_eq!((seen.look().samples(), seen.decided_at()), (5, None));
     let before = canary;
     assert_eq!(
         canary.observe(6, t(60), 0, trials(1, 5)),
@@ -66,11 +64,9 @@ fn canary_refusals_change_nothing() {
     assert_eq!(canary, before);
 
     // The same instant is not a regression.
-    let done = canary
-        .observe(7, t(50), 0, trials(1, 1))
-        .unwrap_or_else(|_| panic!("accepted"));
+    let done = canary.observe(7, t(50), 0, trials(1, 1)).expect("accepted");
     assert_eq!(
-        (done.look.outcome, done.decided_at),
+        (done.look().outcome(), done.decided_at()),
         (Outcome::Regressed, Some(t(50)))
     );
     let before = canary;
@@ -82,16 +78,20 @@ fn canary_refusals_change_nothing() {
     assert_eq!(
         canary
             .observe(7, Duration::MAX, 1, pairs(0, 0, 1))
-            .map(|s| s.decided_at),
+            .map(|s| s.decided_at()),
         Ok(None)
     );
     assert_eq!(canary.last(), Some(Duration::MAX));
 
     assert_eq!(canary.restart(u64::MAX), Ok(()));
     assert_eq!(canary.restart(u64::MAX), Err(Refusal::StaleGeneration));
-    let fresh = canary.status(0).unwrap_or_else(|| panic!("registered"));
+    let fresh = canary.status(0).expect("registered");
     assert_eq!(
-        (fresh.look.samples, fresh.look.outcome, fresh.decided_at),
+        (
+            fresh.look().samples(),
+            fresh.look().outcome(),
+            fresh.decided_at()
+        ),
         (0, Outcome::Undecided, None)
     );
     // Time did not rewind with the generation.
@@ -111,11 +111,7 @@ fn canary_refusals_change_nothing() {
 }
 
 fn advice(action: Action, reason: Reason, test: Option<usize>) -> Recommendation {
-    Recommendation {
-        action,
-        reason,
-        test,
-    }
+    Recommendation::new(action, reason, test).expect("a recommendation recommend gives")
 }
 
 #[test]
@@ -179,7 +175,7 @@ fn recommendation_follows_evidence_limits_and_guardrail() {
     let mut canary = held;
     assert!(canary.observe(3, t(5), 3, trials(0, 30)).is_ok());
     assert_eq!(
-        canary.status(3).map(|status| status.look.outcome),
+        canary.status(3).map(|status| status.look().outcome()),
         Some(Outcome::Cleared)
     );
     assert_eq!(

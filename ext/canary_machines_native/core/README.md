@@ -99,17 +99,17 @@ let plan = Plan::new(model, rate(5, 100), rate(5, 100), 50_000, OnLimit::Hold).e
 
 let mut canary = Canary::<4>::new(1);
 let errors = canary.add(plan).expect("room");
-assert_eq!(canary.recommend(Guardrail::Clear).action, Action::Continue);
+assert_eq!(canary.recommend(Guardrail::Clear).action(), Action::Continue);
 
 let clean = Observation::Trials(Counts::new(734, 734).expect("good <= total"));
 // The instant is monotonic time since an epoch the caller picks.
 let at = Duration::from_secs(60);
 let status = canary.observe(1, at, errors, clean).expect("current generation");
-assert_eq!(status.look.outcome, Outcome::Cleared);
-assert_eq!(status.decided_at, Some(at));
-assert_eq!(canary.recommend(Guardrail::Clear).action, Action::Promote);
-assert_eq!(canary.recommend(Guardrail::NoData).action, Action::Hold);
-assert_eq!(canary.recommend(Guardrail::Breached).action, Action::Rollback);
+assert_eq!(status.look().outcome(), Outcome::Cleared);
+assert_eq!(status.decided_at(), Some(at));
+assert_eq!(canary.recommend(Guardrail::Clear).action(), Action::Promote);
+assert_eq!(canary.recommend(Guardrail::NoData).action(), Action::Hold);
+assert_eq!(canary.recommend(Guardrail::Breached).action(), Action::Rollback);
 ```
 
 - `Sprt` is one test: `observe` adds a batch and looks once, the first outcome
@@ -121,12 +121,25 @@ assert_eq!(canary.recommend(Guardrail::Breached).action, Action::Rollback);
   Instants (`observe`'s `at`, `Canary::last`, `Status::decided_at`) are
   `core::time::Duration` since an epoch the caller picks. A plan's `limit`
   counts samples and a generation is an opaque number; neither is time.
+  Every honoured `observe` records `at` as `Canary::last`; the one that
+  latches an outcome also records it as `Status::decided_at`. A refusal
+  records nothing. `Concluded` is never an honoured repeat, not even for the
+  batch that latched the outcome sent again at the same instant: a test keeps
+  running totals, not batches, and two distinct batches with equal counts at
+  one instant look exactly like a replay, so the core cannot prove one.
 - `recommend` is pure. A breached `Guardrail`, a regressed test or a truncated
   `OnLimit::Rollback` test recommends rollback; an undecided test recommends
   continuing; a truncated `OnLimit::Hold` test, a guardrail without data or an
   empty canary recommends holding; only what is left is a promotion.
   `Guardrail` converts from `budget_machines::State` and `Standing`, both
   re-exported here along with `Counts` and `Objective`.
+
+`Look`, `Status`, `Recommendation`, `Bounds` and `Fraction` are what the core
+returns. Their fields are private behind readers of the same name, and each
+has a validating `new` answering `None` for fields no test, plan or
+`recommend` could produce, so a value that exists is one the core could have
+given and a binding can hold a rebuilt value to the same rule. `Look::is_decided` and `Status::is_decided` say whether an
+outcome has latched.
 
 This is a policy core with an initial, unstable API. It cannot check that the
 sampling model holds, and it does not collect metrics, shift traffic, promote

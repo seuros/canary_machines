@@ -20,6 +20,9 @@ pub const fn ln_ratio(nums: [u64; 2], dens: [u64; 2]) -> Interval {
     sliderule_machines::ln_ratio::<FRACTION_BITS>(&nums, &dens)
 }
 
+/// Micro-nats in one nat: the unit of every `*_micro` reading.
+const MICRO_PER_NAT: i128 = 1_000_000;
+
 /// Millionths of a nat for a value in units of `2^-FRACTION_BITS` nat, rounded
 /// down (towards negative infinity) and saturating at the limits of `i64`.
 ///
@@ -34,6 +37,6 @@ pub fn micro_nats(value: i128) -> i64 {
     // product overflows (|value| < 2^122) and no low bit is dropped first.
     let whole = value >> FRACTION_BITS;
     let fraction = value & ((1 << FRACTION_BITS) - 1);
-    let scaled = whole * 1_000_000 + ((fraction * 1_000_000) >> FRACTION_BITS);
+    let scaled = whole * MICRO_PER_NAT + ((fraction * MICRO_PER_NAT) >> FRACTION_BITS);
     i64::try_from(scaled).unwrap_or(if scaled < 0 { i64::MIN } else { i64::MAX })
 }

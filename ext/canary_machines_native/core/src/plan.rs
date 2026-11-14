@@ -40,6 +40,11 @@ impl Rate {
     pub const fn den(self) -> u32 {
         self.den
     }
+
+    /// Numerator and denominator, widened for exact products.
+    const fn wide(self) -> (u64, u64) {
+        (self.num as u64, self.den as u64)
+    }
 }
 
 /// A positive odds ratio `num / den` of canary failure against baseline failure.
@@ -69,6 +74,12 @@ impl OddsRatio {
     #[must_use]
     pub const fn den(self) -> u32 {
         self.den
+    }
+
+    /// The probability `num / (num + den)` that a discordant pair is the
+    /// canary's fault, as a widened `(num, den)`.
+    const fn hit_rate(self) -> (u64, u64) {
+        (self.num as u64, self.num as u64 + self.den as u64)
     }
 }
 
@@ -105,23 +116,11 @@ impl Model {
             Self::Reference {
                 acceptable,
                 unacceptable,
-            } => [
-                (acceptable.num as u64, acceptable.den as u64),
-                (unacceptable.num as u64, unacceptable.den as u64),
-            ],
+            } => [acceptable.wide(), unacceptable.wide()],
             Self::Paired {
                 acceptable,
                 unacceptable,
-            } => [
-                (
-                    acceptable.num as u64,
-                    acceptable.num as u64 + acceptable.den as u64,
-                ),
-                (
-                    unacceptable.num as u64,
-                    unacceptable.num as u64 + unacceptable.den as u64,
-                ),
-            ],
+            } => [acceptable.hit_rate(), unacceptable.hit_rate()],
         }
     }
 }
@@ -153,10 +152,36 @@ pub enum Invalid {
 /// An exact non-negative fraction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Fraction {
+    num: u64,
+    den: u64,
+}
+
+impl Fraction {
+    /// `None` when `den` is zero.
+    #[must_use]
+    pub const fn new(num: u64, den: u64) -> Option<Self> {
+        if den == 0 {
+            return None;
+        }
+        Some(Self { num, den })
+    }
+
     /// Numerator.
-    pub num: u64,
+    #[must_use]
+    pub const fn num(self) -> u64 {
+        self.num
+    }
+
     /// Denominator; never zero.
-    pub den: u64,
+    #[must_use]
+    pub const fn den(self) -> u64 {
+        self.den
+    }
+
+    /// Whether the fraction is strictly between zero and one.
+    const fn proper(self) -> bool {
+        self.num > 0 && self.num < self.den
+    }
 }
 
 /// Error probabilities a plan guarantees for the statistical test alone,
@@ -164,10 +189,45 @@ pub struct Fraction {
 /// decision at truncation, so this crate claims nothing about it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Bounds {
+    false_rollback: Option<Fraction>,
+    false_promote: Option<Fraction>,
+}
+
+impl Bounds {
+    /// Bounds rebuilt from their parts, or `None` when no plan could guarantee
+    /// them: both absent (a limit policy forces one decision, never two), or
+    /// one not strictly between zero and one (`alpha + beta < 1` keeps each
+    /// bound below one, and positive levels keep it above zero).
+    #[must_use]
+    pub const fn new(
+        false_rollback: Option<Fraction>,
+        false_promote: Option<Fraction>,
+    ) -> Option<Self> {
+        let valid = match (false_rollback, false_promote) {
+            (None, None) => false,
+            (Some(only), None) | (None, Some(only)) => only.proper(),
+            (Some(rollback), Some(promote)) => rollback.proper() && promote.proper(),
+        };
+        if !valid {
+            return None;
+        }
+        Some(Self {
+            false_rollback,
+            false_promote,
+        })
+    }
+
     /// Bound on rollback evidence when `H0` holds: `alpha / (1 - beta)`.
-    pub false_rollback: Option<Fraction>,
+    #[must_use]
+    pub const fn false_rollback(self) -> Option<Fraction> {
+        self.false_rollback
+    }
+
     /// Bound on promote evidence when `H1` holds: `beta / (1 - alpha)`.
-    pub false_promote: Option<Fraction>,
+    #[must_use]
+    pub const fn false_promote(self) -> Option<Fraction> {
+        self.false_promote
+    }
 }
 
 /// A fully specified test: model, error levels, sample limit, limit policy,
@@ -204,8 +264,7 @@ impl Plan {
         {
             return Err(Invalid::Hypotheses);
         }
-        let (alpha_num, alpha_den) = (u64::from(alpha.num), u64::from(alpha.den));
-        let (beta_num, beta_den) = (u64::from(beta.num), u64::from(beta.den));
+        let ((alpha_num, alpha_den), (beta_num, beta_den)) = (alpha.wide(), beta.wide());
         if u128::from(alpha_num) * u128::from(beta_den)
             + u128::from(beta_num) * u128::from(alpha_den)
             >= u128::from(alpha_den) * u128::from(beta_den)
@@ -329,8 +388,7 @@ impl Plan {
     /// The error bounds this plan guarantees; see [`Bounds`].
     #[must_use]
     pub fn bounds(&self) -> Bounds {
-        let (alpha_num, alpha_den) = (u64::from(self.alpha.num), u64::from(self.alpha.den));
-        let (beta_num, beta_den) = (u64::from(self.beta.num), u64::from(self.beta.den));
+        let ((alpha_num, alpha_den), (beta_num, beta_den)) = (self.alpha.wide(), self.beta.wide());
         let false_rollback = Fraction {
             num: alpha_num * beta_den,
             den: alpha_den * (beta_den - beta_num),

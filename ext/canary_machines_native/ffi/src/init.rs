@@ -1,8 +1,10 @@
 //! Private native entry point.
 use canary_machines::FRACTION_BITS;
+use magnus::value::Opaque;
 use magnus::{Error, RClass, Ruby, Value, function, method, prelude::*};
 
-use crate::{CAPACITY, canary::Canary, convert, data_class, sprt::Sprt};
+use crate::classes::{self, Classes};
+use crate::{CAPACITY, canary::Canary, convert, sprt::Sprt, values as parse};
 
 /// `__validate` of a `Data` class: parse `self` as the core type and keep
 /// nothing, so a value the core would not build never exists.
@@ -20,46 +22,57 @@ validator!(validate_counts, convert::counts);
 validator!(validate_pairs, convert::pairs);
 validator!(validate_model, convert::model);
 validator!(validate_plan, convert::plan);
+validator!(validate_interval, parse::interval);
+validator!(validate_fraction, parse::fraction);
+validator!(validate_bounds, parse::bounds);
+validator!(validate_look, parse::look);
+validator!(validate_status, parse::status);
+validator!(validate_recommendation, parse::recommendation);
 
-fn plan_upper(ruby: &Ruby, this: Value) -> Result<Value, Error> {
-    convert::interval_value(ruby, convert::plan(ruby, this)?.upper())
+/// A native `Plan` reader: rebuild the core plan from `self`, then read it.
+macro_rules! plan_reader {
+    ($name:ident -> $answer:ty, |$ruby:ident, $plan:ident| $read:expr) => {
+        fn $name($ruby: &Ruby, this: Value) -> Result<$answer, Error> {
+            let $plan = convert::plan($ruby, this)?;
+            $read
+        }
+    };
 }
 
-fn plan_lower(ruby: &Ruby, this: Value) -> Result<Value, Error> {
-    convert::interval_value(ruby, convert::plan(ruby, this)?.lower())
-}
+plan_reader!(plan_upper -> Value, |ruby, plan| convert::interval_value(ruby, plan.upper()));
+plan_reader!(plan_lower -> Value, |ruby, plan| convert::interval_value(ruby, plan.lower()));
+plan_reader!(plan_hit -> Value, |ruby, plan| convert::interval_value(ruby, plan.hit()));
+plan_reader!(plan_miss -> Value, |ruby, plan| convert::interval_value(ruby, plan.miss()));
+plan_reader!(plan_upper_micro -> i64, |ruby, plan| Ok(plan.upper_micro()));
+plan_reader!(plan_lower_micro -> i64, |ruby, plan| Ok(plan.lower_micro()));
+plan_reader!(plan_bounds -> Value, |ruby, plan| convert::bounds_value(ruby, plan.bounds()));
 
-fn plan_hit(ruby: &Ruby, this: Value) -> Result<Value, Error> {
-    convert::interval_value(ruby, convert::plan(ruby, this)?.hit())
-}
-
-fn plan_miss(ruby: &Ruby, this: Value) -> Result<Value, Error> {
-    convert::interval_value(ruby, convert::plan(ruby, this)?.miss())
-}
-
-fn plan_upper_micro(ruby: &Ruby, this: Value) -> Result<i64, Error> {
-    Ok(convert::plan(ruby, this)?.upper_micro())
-}
-
-fn plan_lower_micro(ruby: &Ruby, this: Value) -> Result<i64, Error> {
-    Ok(convert::plan(ruby, this)?.lower_micro())
-}
-
-fn plan_bounds(ruby: &Ruby, this: Value) -> Result<Value, Error> {
-    convert::bounds_value(ruby, convert::plan(ruby, this)?.bounds())
-}
-
-fn values(ruby: &Ruby) -> Result<(), Error> {
-    let class = |name| -> Result<RClass, Error> { data_class(ruby, name) };
-    class("Rate")?.define_private_method("__validate", method!(validate_rate, 0))?;
-    class("Rate")?.define_singleton_method("failure_of", function!(convert::failure_of, 1))?;
-    class("OddsRatio")?.define_private_method("__validate", method!(validate_odds, 0))?;
-    class("Counts")?.define_private_method("__validate", method!(validate_counts, 0))?;
-    class("Pairs")?.define_private_method("__validate", method!(validate_pairs, 0))?;
-    for name in ["Model::Reference", "Model::Paired"] {
-        class(name)?.define_private_method("__validate", method!(validate_model, 0))?;
+fn values(ruby: &Ruby, classes: &Classes) -> Result<(), Error> {
+    let class = |class: Opaque<RClass>| ruby.get_inner(class);
+    class(classes.rate).define_private_method("__validate", method!(validate_rate, 0))?;
+    class(classes.rate).define_singleton_method("failure_of", function!(convert::failure_of, 1))?;
+    class(classes.odds).define_private_method("__validate", method!(validate_odds, 0))?;
+    let counts = class(classes.counts);
+    counts.define_private_method("__validate", method!(validate_counts, 0))?;
+    counts.define_method("bad", method!(parse::bad, 0))?;
+    counts.define_method("checked_add", method!(parse::checked_add, 1))?;
+    class(classes.pairs).define_private_method("__validate", method!(validate_pairs, 0))?;
+    for model in [classes.reference, classes.paired] {
+        class(model).define_private_method("__validate", method!(validate_model, 0))?;
     }
-    let plan = class("Plan")?;
+    for (value, validate) in [
+        (classes.interval, method!(validate_interval, 0)),
+        (classes.fraction, method!(validate_fraction, 0)),
+        (classes.bounds, method!(validate_bounds, 0)),
+        (classes.look, method!(validate_look, 0)),
+        (classes.status, method!(validate_status, 0)),
+        (classes.recommendation, method!(validate_recommendation, 0)),
+    ] {
+        class(value).define_private_method("__validate", validate)?;
+    }
+    class(classes.look).define_method("decided?", method!(parse::look_decided, 0))?;
+    class(classes.status).define_method("decided?", method!(parse::status_decided, 0))?;
+    let plan = class(classes.plan);
     plan.define_private_method("__validate", method!(validate_plan, 0))?;
     plan.define_method("upper", method!(plan_upper, 0))?;
     plan.define_method("lower", method!(plan_lower, 0))?;
@@ -80,7 +93,7 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
     module
         .define_module("Guardrail")?
         .define_singleton_method("from", function!(convert::guardrail_from, 1))?;
-    values(ruby)?;
+    values(ruby, classes::resolve(ruby, module)?)?;
 
     let class = module.define_class("Sprt", ruby.class_object())?;
     class.undef_default_alloc_func();

@@ -72,21 +72,99 @@ pub enum Reason {
 /// Advice for the rollout as a whole.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Recommendation {
+    action: Action,
+    reason: Reason,
+    test: Option<usize>,
+}
+
+impl Recommendation {
+    /// A recommendation rebuilt from its fields, or `None` for a combination
+    /// [`Canary::recommend`] never gives. A deciding test is named exactly
+    /// for a regression, for a limit policy and for nothing else:
+    /// `Rollback` for `Guardrail` (no test), `Evidence` or `Limit` (a test);
+    /// `Continue` for `Sampling`; `Hold` for `NoTests` or `GuardrailNoData`
+    /// (no test) or `Limit` (a test); `Promote` for `Evidence` (no test) or
+    /// `Limit` (a test).
+    #[must_use]
+    pub const fn new(action: Action, reason: Reason, test: Option<usize>) -> Option<Self> {
+        let named = test.is_some();
+        let (rollback, carry_on, hold, promote) = match action {
+            Action::Rollback => (true, false, false, false),
+            Action::Continue => (false, true, false, false),
+            Action::Hold => (false, false, true, false),
+            Action::Promote => (false, false, false, true),
+        };
+        let valid = match reason {
+            Reason::Evidence => (rollback && named) || (promote && !named),
+            Reason::Limit => named && !carry_on,
+            Reason::Guardrail => rollback && !named,
+            Reason::Sampling => carry_on && !named,
+            Reason::NoTests | Reason::GuardrailNoData => hold && !named,
+        };
+        if !valid {
+            return None;
+        }
+        Some(Self {
+            action,
+            reason,
+            test,
+        })
+    }
+
     /// What to do.
-    pub action: Action,
+    #[must_use]
+    pub const fn action(&self) -> Action {
+        self.action
+    }
+
     /// Why.
-    pub reason: Reason,
+    #[must_use]
+    pub const fn reason(&self) -> Reason {
+        self.reason
+    }
+
     /// The test that decided, when one did.
-    pub test: Option<usize>,
+    #[must_use]
+    pub const fn test(&self) -> Option<usize> {
+        self.test
+    }
 }
 
 /// One test's evidence and the instant it was decided.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Status {
+    look: Look,
+    decided_at: Option<Duration>,
+}
+
+impl Status {
+    /// A status rebuilt from its fields, or `None` unless `decided_at` is
+    /// present exactly when the look has latched an outcome.
+    #[must_use]
+    pub const fn new(look: Look, decided_at: Option<Duration>) -> Option<Self> {
+        if look.is_decided() != decided_at.is_some() {
+            return None;
+        }
+        Some(Self { look, decided_at })
+    }
+
     /// Evidence as of the last accepted observation.
-    pub look: Look,
+    #[must_use]
+    pub const fn look(&self) -> Look {
+        self.look
+    }
+
     /// Instant the outcome latched; `None` while undecided.
-    pub decided_at: Option<Duration>,
+    #[must_use]
+    pub const fn decided_at(&self) -> Option<Duration> {
+        self.decided_at
+    }
+
+    /// Whether the outcome has latched; see [`Look::is_decided`].
+    #[must_use]
+    pub const fn is_decided(&self) -> bool {
+        self.look.is_decided()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -212,7 +290,7 @@ impl<const M: usize> Canary<M> {
             .and_then(Option::as_mut)
             .ok_or(Refusal::UnknownTest)?;
         let look = slot.sprt.observe(observation)?;
-        if look.outcome != Outcome::Undecided {
+        if look.is_decided() {
             slot.decided_at = Some(at);
         }
         self.last = Some(at);

@@ -183,10 +183,6 @@ impl Fleet {
         } else if guardrail == Guardrail::NoData && (rank == 5 || rank == 6) {
             (action, reason, test) = (Action::Hold, Reason::GuardrailNoData, None);
         }
-        Recommendation {
-            action,
-            reason,
-            test,
-        }
+        Recommendation::new(action, reason, test).expect("the model advises what recommend can")
     }
 }

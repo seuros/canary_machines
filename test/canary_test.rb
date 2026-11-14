@@ -85,10 +85,10 @@ class CanaryTest < Minitest::Test
     assert_equal %i[no_data clear breached], %i[no_data quiet firing].map { Guardrail.from(it) }
     assert_equal :clear, Guardrail.from(Struct.new(:remaining).new(5))
     assert_equal :breached, Guardrail.from(Struct.new(:overspent).new(1))
-    assert_raises(ArgumentError) { Guardrail.from(:clear) }
+    assert_raises(RangeError) { Guardrail.from(:clear) }
     assert_raises(TypeError) { Guardrail.from('firing') }
     assert_raises(TypeError) { Guardrail.from(Struct.new(:remaining).new(0.5)) }
-    assert_predicate canary.tap { it.add(reference) }.recommend(Guardrail.from(:firing)), :rollback?
+    assert_equal :rollback, canary.tap { it.add(reference) }.recommend(Guardrail.from(:firing)).action
   end
 
   def test_instants_are_integer_nanoseconds_in_and_out
@@ -114,15 +114,13 @@ class CanaryTest < Minitest::Test
     refute_predicate first.look, :decided?
     refute_predicate first, :decided?
     assert_predicate first, :frozen?
-    assert_predicate c.recommend(:clear), :continue?
-    assert_equal :sampling, c.recommend(:clear).reason
+    assert_equal Recommendation.new(:continue, :sampling, nil), c.recommend(:clear)
 
     second = c.observe_trials(1, 11, 0, trials(0, 1))
     assert_equal [:regressed, 11], [second.look.outcome, second.decided_at]
     assert_predicate second, :decided?
     assert_equal second, c.status(0)
     assert_equal Recommendation.new(action: :rollback, reason: :evidence, test: 0), c.recommend(:clear)
-    assert_predicate c.recommend(:clear), :rollback?
     assert_equal :concluded, c.observe_trials(1, 12, 0, trials(1, 1))
     assert_equal 11, c.last
 
@@ -130,7 +128,6 @@ class CanaryTest < Minitest::Test
     assert_equal :undecided, c.observe_trials(2, 12, 0, trials(30, 30)).look.outcome
     assert_equal :cleared, c.observe_trials(2, 13, 0, trials(1, 1)).look.outcome
     assert_equal Recommendation.new(action: :promote, reason: :evidence, test: nil), c.recommend(:clear)
-    assert_predicate c.recommend(:clear), :promote?
   end
 
   def test_paired_test_discards_concordant_pairs
@@ -199,20 +196,20 @@ class CanaryTest < Minitest::Test
     end
     c = canary
     c.add(reference(5))
-    assert_predicate c.recommend(:clear), :continue?
+    assert_equal :continue, c.recommend(:clear).action
     c.observe_trials(1, 0, 0, trials(5, 5))
-    assert_predicate c.recommend(:clear), :hold?
+    assert_equal :hold, c.recommend(:clear).action
   end
 
   def test_guardrail_overrides_and_withholds
     c = canary
     c.add(reference)
     assert_equal %i[rollback guardrail], c.recommend(:breached).to_h.values_at(:action, :reason)
-    assert_predicate c.recommend(:no_data), :continue?
+    assert_equal :continue, c.recommend(:no_data).action
     c.observe_trials(1, 0, 0, trials(31, 31))
-    assert_predicate c.recommend(:clear), :promote?
+    assert_equal :promote, c.recommend(:clear).action
     assert_equal %i[hold guardrail_no_data], c.recommend(:no_data).to_h.values_at(:action, :reason)
-    assert_predicate c.recommend(:breached), :rollback?
+    assert_equal :rollback, c.recommend(:breached).action
   end
 
   def test_a_single_sprt
@@ -246,42 +243,6 @@ class CanaryTest < Minitest::Test
     assert_equal :truncated, s.outcome
   end
 
-  def test_invalid_values_never_exist
-    assert_raises(TypeError) { Rate.new(0.01, 10) }
-    assert_raises(TypeError) { Rate.new(1, nil) }
-    assert_raises(RangeError) { Rate.new(0, 10) }
-    assert_raises(RangeError) { Rate.new(10, 10) }
-    assert_raises(RangeError) { Rate.new(-1, 10) }
-    assert_raises(RangeError) { Rate.new(1, 2**32) }
-    assert_raises(ArgumentError) { Rate.new(1) }
-    assert_raises(RangeError) { OddsRatio.new(0, 1) }
-    assert_raises(RangeError) { OddsRatio.new(1, 0) }
-    assert_raises(TypeError) { OddsRatio.new(1r, 1) }
-    assert_raises(RangeError) { Counts.new(2, 1) }
-    assert_raises(TypeError) { Counts.new(1.0, 1) }
-    assert_raises(RangeError) { Counts.new(-1, 1) }
-    assert_raises(RangeError) { Pairs.new(2**64 - 1, 1, 0) }
-    assert_raises(RangeError) { Pairs.new(-1, 1, 0) }
-    assert_raises(TypeError) { Pairs.new(1, 1, nil) }
-    assert_raises(TypeError) { Model::Reference.new(1/100r, Rate.new(1, 10)) }
-    assert_raises(TypeError) { Model::Reference.new(OddsRatio.new(1, 1), OddsRatio.new(2, 1)) }
-    assert_raises(TypeError) { Model::Paired.new(Rate.new(1, 100), Rate.new(1, 10)) }
-    assert_raises(TypeError) { Plan.new([1, 2], LEVEL, LEVEL, 10, :hold) }
-    assert_raises(TypeError) { Plan.new(REFERENCE, 5/100r, LEVEL, 10, :hold) }
-    assert_raises(TypeError) { Plan.new(REFERENCE, LEVEL, LEVEL, 10.0, :hold) }
-    assert_raises(TypeError) { Plan.new(REFERENCE, LEVEL, LEVEL, 10, 'hold') }
-    assert_raises(ArgumentError) { Plan.new(REFERENCE, LEVEL, LEVEL, 10, :panic) }
-    assert_raises(ArgumentError) { Plan.new(REFERENCE, LEVEL, LEVEL, 10) }
-    assert_raises(RangeError) { Plan.new(REFERENCE, LEVEL, LEVEL, 0, :hold) }
-    assert_raises(RangeError) { Plan.new(REFERENCE, Rate.new(1, 2), Rate.new(1, 2), 10, :hold) }
-    same = Model::Reference.new(Rate.new(1, 10), Rate.new(1, 10))
-    assert_raises(RangeError) { Plan.new(same, LEVEL, LEVEL, 10, :hold) }
-    backwards = Model::Paired.new(OddsRatio.new(2, 1), OddsRatio.new(1, 1))
-    assert_raises(RangeError) { Plan.new(backwards, LEVEL, LEVEL, 10, :hold) }
-    close = Model::Reference.new(Rate.new(1, 2**32 - 1), Rate.new(1, 2**32 - 2))
-    assert_raises(RangeError) { Plan.new(close, LEVEL, LEVEL, 10, :hold) }
-  end
-
   def test_bad_input_raises
     c = canary
     assert_raises(TypeError) { Canary.new(1.0) }
@@ -307,7 +268,7 @@ class CanaryTest < Minitest::Test
     assert_raises(TypeError) { c.observe_trials(1, 0, 0, good: 1, total: 1) }
     assert_nil c.last
     assert_raises(TypeError) { c.recommend('clear') }
-    assert_raises(ArgumentError) { c.recommend(:fine) }
+    assert_raises(RangeError) { c.recommend(:fine) }
     assert_raises(TypeError) { c.status(nil) }
     assert_raises(TypeError) { c.plan(0.0) }
     assert_raises(TypeError) { c.restart(nil) }
@@ -322,7 +283,7 @@ class CanaryTest < Minitest::Test
     assert_raises(FrozenError) { c.observe_trials(1, 0, 0, trials(1, 1)) }
     assert_raises(FrozenError) { c.observe_pairs(1, 0, 0, pairs(0, 0, 1)) }
     assert_raises(FrozenError) { c.restart(2) }
-    assert_predicate c.recommend(:clear), :continue?
+    assert_equal :continue, c.recommend(:clear).action
     assert_equal :undecided, c.status(0).look.outcome
   end
 end

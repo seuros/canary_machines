@@ -1,29 +1,35 @@
 //! Thin binding to the sequential canary tests.
 mod canary;
+mod classes;
 mod convert;
 mod init;
 mod sprt;
+mod symbols;
+mod values;
 
 use std::time::Duration;
 
 use canary_machines::Refusal;
-use magnus::{Error, Integer, RClass, RModule, Ruby, Symbol, TryConvert, Value, prelude::*};
+use magnus::value::Opaque;
+use magnus::{Error, Integer, RClass, Ruby, TryConvert, Value, prelude::*};
 
 /// Tests one canary can hold.
 const CAPACITY: usize = 8;
+
+/// `value` as an Integer, or `TypeError` with `message`.
+fn integer(value: Value, message: &'static str) -> Result<Integer, Error> {
+    Integer::from_value(value)
+        .ok_or_else(|| Error::new(Ruby::get_with(value).exception_type_error(), message))
+}
 
 #[derive(Clone, Copy)]
 struct Number(u64);
 
 impl TryConvert for Number {
     fn try_convert(value: Value) -> Result<Self, Error> {
-        if Integer::from_value(value).is_none() {
-            return Err(Error::new(
-                Ruby::get_with(value).exception_type_error(),
-                "expected an Integer (unsigned 64-bit)",
-            ));
-        }
-        u64::try_convert(value).map(Self)
+        integer(value, "expected an Integer (unsigned 64-bit)")?
+            .to_u64()
+            .map(Self)
     }
 }
 
@@ -48,13 +54,8 @@ struct Nanos(Duration);
 
 impl TryConvert for Nanos {
     fn try_convert(value: Value) -> Result<Self, Error> {
-        if Integer::from_value(value).is_none() {
-            return Err(Error::new(
-                Ruby::get_with(value).exception_type_error(),
-                "expected Integer nanoseconds",
-            ));
-        }
-        u64::try_convert(value).map(|nanos| Self(Duration::from_nanos(nanos)))
+        let nanos = integer(value, "expected Integer nanoseconds")?.to_u64()?;
+        Ok(Self(Duration::from_nanos(nanos)))
     }
 }
 
@@ -76,48 +77,24 @@ fn range_error(ruby: &Ruby, message: &'static str) -> Error {
     Error::new(ruby.exception_range_error(), message)
 }
 
-/// A symbol argument's name, or `TypeError` for anything else.
-fn symbol_name(ruby: &Ruby, value: Value, message: &'static str) -> Result<String, Error> {
-    let symbol = Symbol::from_value(value).ok_or_else(|| type_error(ruby, message))?;
-    Ok(symbol.name()?.into_owned())
-}
-
-fn refusal(ruby: &Ruby, refused: Refusal) -> Symbol {
-    ruby.to_symbol(match refused {
-        Refusal::StaleGeneration => "stale_generation",
-        Refusal::TimeRegression => "time_regression",
-        Refusal::Full => "full",
-        Refusal::UnknownTest => "unknown_test",
-        Refusal::WrongModel => "wrong_model",
-        Refusal::Concluded => "concluded",
-        Refusal::Overflow => "overflow",
-    })
-}
-
-/// A value object class defined on the Ruby side with `Data.define`; `name`
-/// may be nested (`Model::Reference`).
-fn data_class(ruby: &Ruby, name: &str) -> Result<RClass, Error> {
-    let mut scope: RModule = ruby.class_object().const_get("CanaryMachines")?;
-    let mut parts = name.split("::").peekable();
-    while let Some(part) = parts.next() {
-        if parts.peek().is_none() {
-            return scope.const_get(part);
-        }
-        scope = scope.const_get(part)?;
+/// A core answer as Ruby: the honoured value built by `honoured`, or the
+/// refusal's symbol.
+fn answer<T>(
+    ruby: &Ruby,
+    outcome: Result<T, Refusal>,
+    honoured: impl FnOnce(T) -> Result<Value, Error>,
+) -> Result<Value, Error> {
+    match outcome {
+        Ok(value) => honoured(value),
+        Err(refused) => Ok(symbols::symbol(ruby, refused).as_value()),
     }
-    scope.const_get(name)
 }
 
-/// A `Data` value built by positional `new`.
-fn data<A: magnus::ArgList>(ruby: &Ruby, name: &str, fields: A) -> Result<Value, Error> {
-    data_class(ruby, name)?.funcall("new", fields)
-}
-
-/// Insist that `value` is the `Data` class `name`, so its readers are the
-/// validated fields.
-fn expect(ruby: &Ruby, value: Value, name: &str, message: &'static str) -> Result<(), Error> {
-    if value.is_kind_of(data_class(ruby, name)?) {
-        return Ok(());
-    }
-    Err(type_error(ruby, message))
+/// An instance of `class`, built by positional `new` so it validates.
+fn build<A: magnus::ArgList>(
+    ruby: &Ruby,
+    class: Opaque<RClass>,
+    fields: A,
+) -> Result<Value, Error> {
+    ruby.get_inner(class).funcall("new", fields)
 }

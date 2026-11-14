@@ -81,16 +81,88 @@ pub enum Outcome {
 /// A test's evidence after a look.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Look {
+    outcome: Outcome,
+    hits: u64,
+    misses: u64,
+    samples: u64,
+    llr_micro: i64,
+}
+
+impl Look {
+    /// A look rebuilt from its fields, or `None` when no test could have
+    /// produced it, whatever its plan: `hits + misses` beyond `samples`; an
+    /// outcome other than `Undecided` with no samples (every limit is
+    /// positive and no evidence crosses a threshold); a log-likelihood other
+    /// than zero without hits or misses; `Regressed` without a hit or with a
+    /// negative ratio; `Cleared` without a miss or with a ratio at or above
+    /// zero.
+    #[must_use]
+    pub const fn new(
+        outcome: Outcome,
+        hits: u64,
+        misses: u64,
+        samples: u64,
+        llr_micro: i64,
+    ) -> Option<Self> {
+        let Some(weighed) = hits.checked_add(misses) else {
+            return None;
+        };
+        let consistent = match outcome {
+            Outcome::Undecided => true,
+            Outcome::Truncated => samples > 0,
+            Outcome::Regressed => hits > 0 && llr_micro >= 0,
+            Outcome::Cleared => misses > 0 && llr_micro < 0,
+        };
+        if weighed > samples || !consistent || (weighed == 0 && llr_micro != 0) {
+            return None;
+        }
+        Some(Self {
+            outcome,
+            hits,
+            misses,
+            samples,
+            llr_micro,
+        })
+    }
+
     /// Where the evidence stands.
-    pub outcome: Outcome,
+    #[must_use]
+    pub const fn outcome(&self) -> Outcome {
+        self.outcome
+    }
+
     /// Observations favouring `H1`: canary failures, or canary-only failures.
-    pub hits: u64,
+    #[must_use]
+    pub const fn hits(&self) -> u64 {
+        self.hits
+    }
+
     /// Observations favouring `H0`: canary successes, or baseline-only failures.
-    pub misses: u64,
+    #[must_use]
+    pub const fn misses(&self) -> u64 {
+        self.misses
+    }
+
     /// Everything counted against the limit, concordant pairs included.
-    pub samples: u64,
+    #[must_use]
+    pub const fn samples(&self) -> u64 {
+        self.samples
+    }
+
     /// Log-likelihood ratio in millionths of a nat, rounded down, saturating.
-    pub llr_micro: i64,
+    #[must_use]
+    pub const fn llr_micro(&self) -> i64 {
+        self.llr_micro
+    }
+
+    /// Whether the outcome has latched: anything but `Undecided`.
+    #[must_use]
+    pub const fn is_decided(&self) -> bool {
+        match self.outcome {
+            Outcome::Undecided => false,
+            Outcome::Cleared | Outcome::Regressed | Outcome::Truncated => true,
+        }
+    }
 }
 
 /// A sequential probability ratio test: accumulates evidence look by look and

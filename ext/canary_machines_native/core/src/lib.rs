@@ -26,6 +26,11 @@ pub enum Refusal {
     /// The observation is not the kind the test's sampling model takes.
     WrongModel,
     /// The test already latched an outcome and takes no more evidence.
+    ///
+    /// Never an honoured repeat, even for the batch that latched it sent
+    /// again at the same instant: a test keeps running totals, not batches,
+    /// and two distinct batches with equal counts at one instant look exactly
+    /// like a replay, so the core cannot prove one.
     Concluded,
     /// The sample count would not fit in 64 bits.
     Overflow,

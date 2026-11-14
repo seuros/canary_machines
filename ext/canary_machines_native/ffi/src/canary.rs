@@ -1,10 +1,11 @@
 //! `CanaryMachines::Canary`.
 use std::cell::RefCell;
 
-use canary_machines::{Action, Observation, Reason};
+use canary_machines::Observation;
 use magnus::{Error, Integer, Ruby, Value, prelude::*, typed_data::Obj};
 
-use crate::{CAPACITY, Nanos, Number, convert, data, index, nanos, refusal};
+use crate::classes::{classes, keep};
+use crate::{CAPACITY, Nanos, Number, answer, build, convert, index, nanos, symbols};
 
 #[magnus::wrap(class = "CanaryMachines::Canary", free_immediately, size)]
 pub struct Canary {
@@ -22,26 +23,25 @@ impl Canary {
         this.check_frozen()?;
         let plan = convert::plan(ruby, plan)?;
         let outcome = this.core.borrow_mut().add(plan);
-        Ok(match outcome {
-            Ok(index) => ruby.integer_from_u64(index as u64).as_value(),
-            Err(refused) => refusal(ruby, refused).as_value(),
+        answer(ruby, outcome, |index| {
+            Ok(ruby.integer_from_u64(index as u64).as_value())
         })
     }
 
+    /// Clone-then-keep: the answer is a `Status` built through `new`.
     fn observe(
         ruby: &Ruby,
-        this: &Self,
+        this: Obj<Self>,
         (generation, at, test): (Number, Nanos, Number),
         observation: Observation,
     ) -> Result<Value, Error> {
-        let outcome = this
-            .core
-            .borrow_mut()
-            .observe(generation.0, at.0, index(test), observation);
-        match outcome {
-            Ok(seen) => convert::status_value(ruby, &seen),
-            Err(refused) => Ok(refusal(ruby, refused).as_value()),
-        }
+        keep(
+            ruby,
+            this,
+            &this.core,
+            |core| core.observe(generation.0, at.0, index(test), observation),
+            |outcome| answer(ruby, outcome, |seen| convert::status_value(ruby, &seen)),
+        )
     }
 
     pub fn observe_trials(
@@ -54,7 +54,7 @@ impl Canary {
     ) -> Result<Value, Error> {
         this.check_frozen()?;
         let observation = Observation::Trials(convert::counts(ruby, counts)?);
-        Self::observe(ruby, &this, (generation, at, test), observation)
+        Self::observe(ruby, this, (generation, at, test), observation)
     }
 
     pub fn observe_pairs(
@@ -67,40 +67,27 @@ impl Canary {
     ) -> Result<Value, Error> {
         this.check_frozen()?;
         let observation = Observation::Pairs(convert::pairs(ruby, pairs)?);
-        Self::observe(ruby, &this, (generation, at, test), observation)
+        Self::observe(ruby, this, (generation, at, test), observation)
     }
 
     pub fn recommend(ruby: &Ruby, this: &Self, guardrail: Value) -> Result<Value, Error> {
-        let guardrail = convert::guardrail(ruby, guardrail)?;
+        let guardrail = symbols::parse(ruby, guardrail)?;
         let advice = this.core.borrow().recommend(guardrail);
-        let action = match advice.action {
-            Action::Continue => "continue",
-            Action::Promote => "promote",
-            Action::Rollback => "rollback",
-            Action::Hold => "hold",
-        };
-        let reason = match advice.reason {
-            Reason::Evidence => "evidence",
-            Reason::Limit => "limit",
-            Reason::Guardrail => "guardrail",
-            Reason::GuardrailNoData => "guardrail_no_data",
-            Reason::Sampling => "sampling",
-            Reason::NoTests => "no_tests",
-        };
-        data(
+        build(
             ruby,
-            "Recommendation",
-            (ruby.to_symbol(action), ruby.to_symbol(reason), advice.test),
+            classes(ruby)?.recommendation,
+            (
+                symbols::symbol(ruby, advice.action()),
+                symbols::symbol(ruby, advice.reason()),
+                advice.test(),
+            ),
         )
     }
 
     pub fn restart(ruby: &Ruby, this: Obj<Self>, generation: Number) -> Result<Value, Error> {
         this.check_frozen()?;
         let outcome = this.core.borrow_mut().restart(generation.0);
-        Ok(match outcome {
-            Ok(()) => ruby.to_symbol("ok").as_value(),
-            Err(refused) => refusal(ruby, refused).as_value(),
-        })
+        answer(ruby, outcome, |()| Ok(ruby.to_symbol("ok").as_value()))
     }
 
     pub fn plan(ruby: &Ruby, this: &Self, test: Number) -> Result<Option<Value>, Error> {

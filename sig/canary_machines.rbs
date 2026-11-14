@@ -4,6 +4,10 @@ module CanaryMachines
   # Fraction bits of every Interval end.
   FRACTION_BITS: Integer
 
+  # Every Data value below validates natively when built (TypeError for a
+  # wrong type, RangeError for a value the core rejects). They are final:
+  # subclassing one raises TypeError, and `allocate` is undefined.
+
   type outcome = :undecided | :cleared | :regressed | :truncated
   type action = :continue | :promote | :rollback | :hold
   type reason = :evidence | :limit | :guardrail | :guardrail_no_data | :sampling | :no_tests
@@ -32,6 +36,10 @@ module CanaryMachines
   # down and saturating at the limits of a signed 64-bit Integer.
   def self.micro_nats: (Integer value) -> Integer
 
+  # Every Data value validates through the core when built, by hand or by the
+  # gem: a wrong type raises TypeError, a value the core rejects (including an
+  # unknown Symbol) RangeError.
+
   # `0 < num < den`, both in 0..2**32-1; anything else raises TypeError or RangeError.
   class Rate < Data
     attr_reader num: Integer
@@ -56,6 +64,9 @@ module CanaryMachines
     attr_reader total: Integer
     def self.new: (Integer good, Integer total) -> Counts
                 | (good: Integer, total: Integer) -> Counts
+    def bad: () -> Integer
+    # This gem's Counts, whatever counts `other` is; nil when a sum would pass 2**64-1.
+    def checked_add: (_Counts other) -> Counts?
   end
 
   # Three counts in 0..2**64-1 whose sum is too; anything else raises.
@@ -84,19 +95,28 @@ module CanaryMachines
     end
   end
 
+  # Both ends within 128 bits, `lo <= hi`.
   class Interval < Data
     attr_reader lo: Integer
     attr_reader hi: Integer
+    def self.new: (Integer lo, Integer hi) -> Interval
+                | (lo: Integer, hi: Integer) -> Interval
   end
 
+  # `Fraction::new`: both in 0..2**64-1, `den > 0`.
   class Fraction < Data
     attr_reader num: Integer
     attr_reader den: Integer
+    def self.new: (Integer num, Integer den) -> Fraction
+                | (num: Integer, den: Integer) -> Fraction
   end
 
+  # `Bounds::new`: never both nil; each Fraction strictly between 0 and 1.
   class Bounds < Data
     attr_reader false_rollback: Fraction?
     attr_reader false_promote: Fraction?
+    def self.new: (Fraction? false_rollback, Fraction? false_promote) -> Bounds
+                | (false_rollback: Fraction?, false_promote: Fraction?) -> Bounds
   end
 
   # The arguments of the core's `Plan::new`, in order. Raises RangeError when
@@ -119,30 +139,40 @@ module CanaryMachines
     def bounds: () -> Bounds
   end
 
+  # `Look::new`: RangeError for hits + misses beyond samples, a decided
+  # outcome with no samples, a nonzero llr_micro with no hits or misses,
+  # :regressed without a hit or with a negative llr_micro, :cleared without a
+  # miss or with llr_micro >= 0. llr_micro is a signed 64-bit Integer.
   class Look < Data
     attr_reader outcome: outcome
     attr_reader hits: Integer
     attr_reader misses: Integer
     attr_reader samples: Integer
     attr_reader llr_micro: Integer
+    def self.new: (outcome outcome, Integer hits, Integer misses, Integer samples, Integer llr_micro) -> Look
+                | (outcome: outcome, hits: Integer, misses: Integer, samples: Integer, llr_micro: Integer) -> Look
+    # The core's `Look::is_decided`: anything but :undecided.
     def decided?: () -> bool
   end
 
+  # `Status::new`: RangeError unless decided_at is present exactly when the look is decided.
   class Status < Data
     attr_reader look: Look
     # Instant the outcome latched, Integer nanoseconds; nil while undecided.
     attr_reader decided_at: Integer?
+    def self.new: (Look look, Integer? decided_at) -> Status
+                | (look: Look, decided_at: Integer?) -> Status
+    # The core's `Status::is_decided`.
     def decided?: () -> bool
   end
 
+  # `Recommendation::new`: RangeError for a combination `recommend` never gives.
   class Recommendation < Data
     attr_reader action: action
     attr_reader reason: reason
     attr_reader test: Integer?
-    def promote?: () -> bool
-    def rollback?: () -> bool
-    def continue?: () -> bool
-    def hold?: () -> bool
+    def self.new: (action action, reason reason, Integer? test) -> Recommendation
+                | (action: action, reason: reason, test: Integer?) -> Recommendation
   end
 
   module Guardrail
@@ -173,9 +203,11 @@ module CanaryMachines
     def plan: (Integer index) -> Plan?
     def status: (Integer index) -> Status?
     # One method per variant of the core's `Observation`. `at` is Integer
-    # nanoseconds of monotonic time, as is `last`. Honoured: the test's Status.
-    # Refused: :stale_generation, :time_regression, :unknown_test, :wrong_model,
-    # :concluded, :overflow.
+    # nanoseconds of monotonic time, as is `last`. Honoured: the test's Status;
+    # every honoured observation records `at` as `last`, and the one that
+    # latches an outcome also records it as `decided_at`. Refused:
+    # :stale_generation, :time_regression, :unknown_test, :wrong_model,
+    # :concluded, :overflow, recording nothing.
     def observe_trials: (Integer generation, Integer at, Integer index, _Counts counts) -> (Status | :stale_generation | :time_regression | :unknown_test | :wrong_model | :concluded | :overflow)
     def observe_pairs: (Integer generation, Integer at, Integer index, Pairs pairs) -> (Status | :stale_generation | :time_regression | :unknown_test | :wrong_model | :concluded | :overflow)
     # Honoured: :ok. Refused: :stale_generation.

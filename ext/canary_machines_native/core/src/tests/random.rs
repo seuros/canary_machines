@@ -63,7 +63,7 @@ fn random_test(rng: &mut Rng) -> (Plan, Naive) {
         limit,
         on_limit,
     )
-    .unwrap_or_else(|invalid| panic!("valid plan: {invalid:?}"));
+    .expect("valid plan");
     (plan, naive)
 }
 
@@ -127,20 +127,24 @@ fn randomized_canary_matches_the_naive_model() {
                 (Ok(()), Ok(status)) => {
                     now = now.max(at);
                     let test = &fleet.tests[index];
-                    assert_eq!(status.look.outcome, test.outcome);
-                    match status.look.outcome {
+                    assert_eq!(status.look().outcome(), test.outcome);
+                    match status.look().outcome() {
                         Outcome::Cleared => cleared += 1,
                         Outcome::Regressed => regressed += 1,
                         Outcome::Truncated => truncated += 1,
                         Outcome::Undecided => {}
                     }
-                    assert_eq!(status.decided_at, test.decided_at.map(t));
+                    assert_eq!(status.decided_at(), test.decided_at.map(t));
                     assert_eq!(
-                        (status.look.hits, status.look.misses, status.look.samples),
+                        (
+                            status.look().hits(),
+                            status.look().misses(),
+                            status.look().samples()
+                        ),
                         (test.hits, test.misses, test.samples)
                     );
                     let micro = (test.llr() * 1e6).floor() as i64;
-                    assert!((status.look.llr_micro - micro).abs() <= 1);
+                    assert!((status.look().llr_micro() - micro).abs() <= 1);
                     assert_eq!(canary.status(index), Some(status));
                 }
                 (Err(expected), Err(actual)) => {
