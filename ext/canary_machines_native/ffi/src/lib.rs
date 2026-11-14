@@ -9,7 +9,7 @@ mod values;
 
 use canary_machines::Refusal;
 use magnus::{Error, Ruby, Value, prelude::*};
-use matryona_machines::ruby::Class;
+use matryona_machines::ruby::{Class, Symbols};
 
 /// Tests one canary can hold.
 const CAPACITY: usize = 8;
@@ -36,7 +36,7 @@ fn answer<T>(
 ) -> Result<Value, Error> {
     match outcome {
         Ok(value) => honoured(value),
-        Err(refused) => Ok(symbols::symbol(ruby, refused).as_value()),
+        Err(refused) => Ok(symbols::Refusals::symbol(ruby, refused).as_value()),
     }
 }
 

@@ -168,6 +168,35 @@ class ValuesTest < Minitest::Test
     assert_instance_of Status, c.observe_trials(1, 1, 0, Counts.new(1, 1).tap(&:singleton_class))
   end
 
+  # Fields are read from the struct itself: a redefined reader never runs.
+  def test_redefined_readers_are_ignored
+    built = plan
+    counts = Counts.new(1, 1)
+    status = Canary.new(1).tap { |c| c.add(built) }.status(0)
+    with_raising_readers(Rate, Model::Reference, Plan, Counts, Look, Status) do
+      c = Canary.new(1)
+      assert_equal 0, c.add(built)
+      assert_instance_of Status, c.observe_trials(1, 1, 0, counts)
+      assert_equal 0, counts.bad
+      assert_equal status, Status.new(*status.deconstruct)
+      assert_kind_of Integer, built.upper_micro
+    end
+  end
+
+  # Every reader of `classes` raises while the block runs.
+  def with_raising_readers(*classes)
+    saved = classes.flat_map { |klass| klass.members.map { |name| [klass, name, klass.instance_method(name)] } }
+    verbose = $VERBOSE
+    $VERBOSE = nil
+    saved.each { |klass, name, _| klass.define_method(name) { raise 'the binding ran a reader' } }
+    $VERBOSE = verbose
+    yield
+  ensure
+    $VERBOSE = nil
+    saved.each { |klass, name, method| klass.define_method(name, method) }
+    $VERBOSE = verbose
+  end
+
   def test_a_marshal_forged_value_never_reaches_the_core
     c = Canary.new(1)
     c.add(plan)

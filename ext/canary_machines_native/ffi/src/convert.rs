@@ -1,21 +1,19 @@
 //! Ruby `Data` values to core types and back.
 use canary_machines::{
     Bounds, Counts, Fraction, Guardrail, Interval, Invalid, Look, Model, Objective, OddsRatio,
-    OnLimit, Pairs, Plan, Rate, Standing, State, Status, micro_nats,
+    Pairs, Plan, Rate, Standing, State, Status, micro_nats,
 };
 use magnus::{Error, Ruby, Symbol, Value, prelude::*};
-use matryona_machines::ruby::{exact_struct, integer, nanoseconds};
+use matryona_machines::ruby::{Symbols, exact_fields, instance_of, integer, nanoseconds};
 
 use crate::classes::classes;
-use crate::{build, range_error, symbols, type_error, values};
+use crate::symbols::{Guardrails, OnLimits, Outcomes};
+use crate::{build, range_error, type_error};
 
 pub fn rate(ruby: &Ruby, value: Value) -> Result<Rate, Error> {
     let class = classes(ruby)?.rate.get(ruby);
-    let held = exact_struct(ruby, value, class, "expected a CanaryMachines::Rate")?;
-    let (num, den) = (
-        integer(held.aref(0)?, "num")?,
-        integer(held.aref(1)?, "den")?,
-    );
+    let [num, den] = exact_fields::<2>(ruby, value, class, "expected a CanaryMachines::Rate")?;
+    let (num, den) = (integer(num, "num")?, integer(den, "den")?);
     Rate::new(num, den).ok_or_else(|| range_error(ruby, "a rate needs 0 < num < den"))
 }
 
@@ -25,11 +23,8 @@ fn rate_value(ruby: &Ruby, rate: Rate) -> Result<Value, Error> {
 
 pub fn odds(ruby: &Ruby, value: Value) -> Result<OddsRatio, Error> {
     let message = "expected a CanaryMachines::OddsRatio";
-    let held = exact_struct(ruby, value, classes(ruby)?.odds.get(ruby), message)?;
-    let (num, den) = (
-        integer(held.aref(0)?, "num")?,
-        integer(held.aref(1)?, "den")?,
-    );
+    let [num, den] = exact_fields::<2>(ruby, value, classes(ruby)?.odds.get(ruby), message)?;
+    let (num, den) = (integer(num, "num")?, integer(den, "den")?);
     OddsRatio::new(num, den)
         .ok_or_else(|| range_error(ruby, "an odds ratio needs num > 0 and den > 0"))
 }
@@ -46,11 +41,9 @@ fn odds_value(ruby: &Ruby, odds: OddsRatio) -> Result<Value, Error> {
 pub fn counts(ruby: &Ruby, value: Value) -> Result<Counts, Error> {
     const MESSAGE: &str = "expected a Counts (good, total)";
     let own = classes(ruby)?.counts.get(ruby);
-    let (good, total): (u64, u64) = if let Ok(held) = exact_struct(ruby, value, own, MESSAGE) {
-        (
-            integer(held.aref(0)?, "good")?,
-            integer(held.aref(1)?, "total")?,
-        )
+    let (good, total): (u64, u64) = if instance_of(value, own) {
+        let [good, total] = exact_fields::<2>(ruby, value, own, MESSAGE)?;
+        (integer(good, "good")?, integer(total, "total")?)
     } else if value.is_kind_of(own)
         || !(value.respond_to("good", false)? && value.respond_to("total", false)?)
     {
@@ -64,13 +57,14 @@ pub fn counts(ruby: &Ruby, value: Value) -> Result<Counts, Error> {
 
 pub fn pairs(ruby: &Ruby, value: Value) -> Result<Pairs, Error> {
     let class = classes(ruby)?.pairs.get(ruby);
-    let held = exact_struct(ruby, value, class, "expected a CanaryMachines::Pairs")?;
-    let canary_only = integer(held.aref(0)?, "canary_only")?;
-    let baseline_only = integer(held.aref(1)?, "baseline_only")?;
+    let [canary_only, baseline_only, concordant] =
+        exact_fields::<3>(ruby, value, class, "expected a CanaryMachines::Pairs")?;
+    let canary_only = integer(canary_only, "canary_only")?;
+    let baseline_only = integer(baseline_only, "baseline_only")?;
     Pairs::new(
         canary_only,
         baseline_only,
-        integer(held.aref(2)?, "concordant")?,
+        integer(concordant, "concordant")?,
     )
     .ok_or_else(|| range_error(ruby, "pair counts must sum within 64 bits"))
 }
@@ -78,18 +72,16 @@ pub fn pairs(ruby: &Ruby, value: Value) -> Result<Pairs, Error> {
 pub fn model(ruby: &Ruby, value: Value) -> Result<Model, Error> {
     const MESSAGE: &str = "expected a CanaryMachines::Model::Reference or Model::Paired";
     let classes = classes(ruby)?;
-    let reference = exact_struct(ruby, value, classes.reference.get(ruby), MESSAGE);
-    let held = match reference {
-        Ok(held) => held,
-        Err(_) => exact_struct(ruby, value, classes.paired.get(ruby), MESSAGE)?,
-    };
-    let (acceptable, unacceptable): (Value, Value) = (held.aref(0)?, held.aref(1)?);
-    if reference.is_ok() {
+    let reference = classes.reference.get(ruby);
+    if instance_of(value, reference) {
+        let [acceptable, unacceptable] = exact_fields::<2>(ruby, value, reference, MESSAGE)?;
         return Ok(Model::Reference {
             acceptable: rate(ruby, acceptable)?,
             unacceptable: rate(ruby, unacceptable)?,
         });
     }
+    let paired = classes.paired.get(ruby);
+    let [acceptable, unacceptable] = exact_fields::<2>(ruby, value, paired, MESSAGE)?;
     Ok(Model::Paired {
         acceptable: odds(ruby, acceptable)?,
         unacceptable: odds(ruby, unacceptable)?,
@@ -125,14 +117,15 @@ fn model_value(ruby: &Ruby, model: Model) -> Result<Value, Error> {
 
 pub fn plan(ruby: &Ruby, value: Value) -> Result<Plan, Error> {
     let class = classes(ruby)?.plan.get(ruby);
-    let held = exact_struct(ruby, value, class, "expected a CanaryMachines::Plan")?;
-    let limit = integer(held.aref(3)?, "limit")?;
+    let [model_field, alpha, beta, limit, on_limit] =
+        exact_fields::<5>(ruby, value, class, "expected a CanaryMachines::Plan")?;
+    let limit = integer(limit, "limit")?;
     Plan::new(
-        model(ruby, held.aref(0)?)?,
-        rate(ruby, held.aref(1)?)?,
-        rate(ruby, held.aref(2)?)?,
+        model(ruby, model_field)?,
+        rate(ruby, alpha)?,
+        rate(ruby, beta)?,
         limit,
-        symbols::parse::<OnLimit>(ruby, held.aref(4)?)?,
+        OnLimits::parse(ruby, on_limit)?,
     )
     .map_err(|invalid| {
         range_error(
@@ -156,7 +149,7 @@ pub fn plan_value(ruby: &Ruby, plan: &Plan) -> Result<Value, Error> {
             rate_value(ruby, plan.alpha())?,
             rate_value(ruby, plan.beta())?,
             plan.limit(),
-            symbols::symbol(ruby, plan.on_limit()),
+            OnLimits::symbol(ruby, plan.on_limit()),
         ),
     )
 }
@@ -194,7 +187,7 @@ pub fn look_value(ruby: &Ruby, look: &Look) -> Result<Value, Error> {
         ruby,
         classes(ruby)?.look,
         (
-            symbols::symbol(ruby, look.outcome()),
+            Outcomes::symbol(ruby, look.outcome()),
             look.hits(),
             look.misses(),
             look.samples(),
@@ -236,7 +229,7 @@ pub fn guardrail_from(ruby: &Ruby, value: Value) -> Result<Symbol, Error> {
     } else {
         return Err(type_error(ruby, MESSAGE));
     };
-    Ok(symbols::symbol(ruby, verdict))
+    Ok(Guardrails::symbol(ruby, verdict))
 }
 
 /// `Rate.failure_of`: read from anything with an objective's `good` and
@@ -256,5 +249,5 @@ pub fn failure_of(ruby: &Ruby, objective: Value) -> Result<Option<Value>, Error>
 
 /// `CanaryMachines.micro_nats`.
 pub fn micro(value: Value) -> Result<i64, Error> {
-    Ok(micro_nats(values::wide(value, "value")?))
+    Ok(micro_nats(integer(value, "value")?))
 }

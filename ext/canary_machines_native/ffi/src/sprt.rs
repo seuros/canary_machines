@@ -3,9 +3,10 @@ use std::cell::RefCell;
 
 use canary_machines::Observation;
 use magnus::{Error, Ruby, Symbol, Value, prelude::*, typed_data::Obj};
-use matryona_machines::ruby::keep;
+use matryona_machines::ruby::{Symbols, keep};
 
-use crate::{answer, convert, symbols};
+use crate::symbols::Outcomes;
+use crate::{answer, convert};
 
 #[magnus::wrap(class = "CanaryMachines::Sprt", free_immediately, size)]
 pub struct Sprt {
@@ -26,7 +27,7 @@ impl Sprt {
     }
 
     pub fn outcome(ruby: &Ruby, this: &Self) -> Symbol {
-        symbols::symbol(ruby, this.core.borrow().outcome())
+        Outcomes::symbol(ruby, this.core.borrow().outcome())
     }
 
     pub fn look(ruby: &Ruby, this: &Self) -> Result<Value, Error> {

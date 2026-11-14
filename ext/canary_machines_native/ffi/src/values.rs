@@ -2,23 +2,20 @@
 //! to the core's constructors exactly like one the gem returned, and the
 //! readers the core gives them.
 use canary_machines::{Bounds, Counts, Fraction, Interval, Look, Recommendation, Status};
+use core::time::Duration;
 use magnus::{Error, Ruby, Value, prelude::*};
-use matryona_machines::ruby::{duration, exact_struct, integer};
+use matryona_machines::ruby::{Symbols, exact_fields, integer, optional};
 
 use crate::classes::classes;
-use crate::{build, convert, range_error, symbols};
-
-/// An Integer within 128 bits; `TypeError` for anything else.
-pub fn wide(value: Value, name: &str) -> Result<i128, Error> {
-    integer(value, name)
-}
+use crate::symbols::{Actions, Outcomes, Reasons};
+use crate::{build, convert, range_error};
 
 /// The sibling `sliderule_machines::Interval` has public fields and no
 /// constructor; an interval holds its value only when `lo <= hi`.
 pub fn interval(ruby: &Ruby, value: Value) -> Result<Interval, Error> {
     let message = "expected a CanaryMachines::Interval";
-    let held = exact_struct(ruby, value, classes(ruby)?.interval.get(ruby), message)?;
-    let (lo, hi) = (wide(held.aref(0)?, "lo")?, wide(held.aref(1)?, "hi")?);
+    let [lo, hi] = exact_fields::<2>(ruby, value, classes(ruby)?.interval.get(ruby), message)?;
+    let (lo, hi): (i128, i128) = (integer(lo, "lo")?, integer(hi, "hi")?);
     if lo > hi {
         return Err(range_error(ruby, "an interval needs lo <= hi"));
     }
@@ -27,11 +24,8 @@ pub fn interval(ruby: &Ruby, value: Value) -> Result<Interval, Error> {
 
 pub fn fraction(ruby: &Ruby, value: Value) -> Result<Fraction, Error> {
     let message = "expected a CanaryMachines::Fraction";
-    let held = exact_struct(ruby, value, classes(ruby)?.fraction.get(ruby), message)?;
-    let (num, den) = (
-        integer(held.aref(0)?, "num")?,
-        integer(held.aref(1)?, "den")?,
-    );
+    let [num, den] = exact_fields::<2>(ruby, value, classes(ruby)?.fraction.get(ruby), message)?;
+    let (num, den) = (integer(num, "num")?, integer(den, "den")?);
     Fraction::new(num, den).ok_or_else(|| range_error(ruby, "a fraction needs den > 0"))
 }
 
@@ -44,39 +38,34 @@ fn bound(ruby: &Ruby, value: Value) -> Result<Option<Fraction>, Error> {
 
 pub fn bounds(ruby: &Ruby, value: Value) -> Result<Bounds, Error> {
     let class = classes(ruby)?.bounds.get(ruby);
-    let held = exact_struct(ruby, value, class, "expected a CanaryMachines::Bounds")?;
-    Bounds::new(bound(ruby, held.aref(0)?)?, bound(ruby, held.aref(1)?)?)
+    let [false_rollback, false_promote] =
+        exact_fields::<2>(ruby, value, class, "expected a CanaryMachines::Bounds")?;
+    Bounds::new(bound(ruby, false_rollback)?, bound(ruby, false_promote)?)
         .ok_or_else(|| range_error(ruby, "no plan guarantees these bounds"))
 }
 
 pub fn look(ruby: &Ruby, value: Value) -> Result<Look, Error> {
     let class = classes(ruby)?.look.get(ruby);
-    let held = exact_struct(ruby, value, class, "expected a CanaryMachines::Look")?;
-    let (hits, misses) = (
-        integer(held.aref(1)?, "hits")?,
-        integer(held.aref(2)?, "misses")?,
-    );
-    let samples = integer(held.aref(3)?, "samples")?;
+    let [outcome, hits, misses, samples, llr_micro] =
+        exact_fields::<5>(ruby, value, class, "expected a CanaryMachines::Look")?;
+    let (hits, misses) = (integer(hits, "hits")?, integer(misses, "misses")?);
+    let samples = integer(samples, "samples")?;
     Look::new(
-        symbols::parse(ruby, held.aref(0)?)?,
+        Outcomes::parse(ruby, outcome)?,
         hits,
         misses,
         samples,
-        integer(held.aref(4)?, "llr_micro")?,
+        integer(llr_micro, "llr_micro")?,
     )
     .ok_or_else(|| range_error(ruby, "no test produces this look"))
 }
 
 pub fn status(ruby: &Ruby, value: Value) -> Result<Status, Error> {
     let class = classes(ruby)?.status.get(ruby);
-    let held = exact_struct(ruby, value, class, "expected a CanaryMachines::Status")?;
-    let decided_at: Value = held.aref(1)?;
-    let decided_at = if decided_at.is_nil() {
-        None
-    } else {
-        Some(duration(decided_at, "decided_at")?)
-    };
-    Status::new(look(ruby, held.aref(0)?)?, decided_at).ok_or_else(|| {
+    let [held_look, decided_at] =
+        exact_fields::<2>(ruby, value, class, "expected a CanaryMachines::Status")?;
+    let decided_at = optional(decided_at, "decided_at")?.map(Duration::from_nanos);
+    Status::new(look(ruby, held_look)?, decided_at).ok_or_else(|| {
         range_error(
             ruby,
             "decided_at is present exactly when the look is decided",
@@ -86,21 +75,12 @@ pub fn status(ruby: &Ruby, value: Value) -> Result<Status, Error> {
 
 pub fn recommendation(ruby: &Ruby, value: Value) -> Result<Recommendation, Error> {
     let message = "expected a CanaryMachines::Recommendation";
-    let held = exact_struct(
-        ruby,
-        value,
-        classes(ruby)?.recommendation.get(ruby),
-        message,
-    )?;
-    let test: Value = held.aref(2)?;
-    let test = if test.is_nil() {
-        None
-    } else {
-        Some(crate::index(integer(test, "test")?))
-    };
+    let class = classes(ruby)?.recommendation.get(ruby);
+    let [action, reason, test] = exact_fields::<3>(ruby, value, class, message)?;
+    let test = optional(test, "test")?.map(crate::index);
     Recommendation::new(
-        symbols::parse(ruby, held.aref(0)?)?,
-        symbols::parse(ruby, held.aref(1)?)?,
+        Actions::parse(ruby, action)?,
+        Reasons::parse(ruby, reason)?,
         test,
     )
     .ok_or_else(|| range_error(ruby, "recommend never gives this combination"))

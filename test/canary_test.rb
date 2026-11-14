@@ -240,6 +240,9 @@ class CanaryTest < Minitest::Test
     assert_raises(FrozenError) { s.observe_trials(trials(1, 1)) }
     assert_raises(FrozenError) { s.observe_pairs(pairs(0, 0, 1)) }
     assert_raises(FrozenError) { s.reset }
+    # Frozen is checked first, before the arguments are read.
+    assert_raises(FrozenError) { s.observe_trials(nil) }
+    assert_raises(FrozenError) { s.observe_pairs([1, 0, 0]) }
     assert_equal :truncated, s.outcome
   end
 
@@ -283,6 +286,11 @@ class CanaryTest < Minitest::Test
     assert_raises(FrozenError) { c.observe_trials(1, 0, 0, trials(1, 1)) }
     assert_raises(FrozenError) { c.observe_pairs(1, 0, 0, pairs(0, 0, 1)) }
     assert_raises(FrozenError) { c.restart(2) }
+    # Frozen is checked first, before the arguments are read.
+    assert_raises(FrozenError) { c.add(:plan) }
+    assert_raises(FrozenError) { c.observe_trials(-1, 1.5, '0', nil) }
+    assert_raises(FrozenError) { c.observe_pairs(2**64, -1, nil, :pairs) }
+    assert_raises(FrozenError) { c.restart('2') }
     assert_equal :continue, c.recommend(:clear).action
     assert_equal :undecided, c.status(0).look.outcome
   end

@@ -1,132 +1,66 @@
-//! The core's unit-variant enums as Ruby symbols, both ways.
+//! The core's unit-variant enums as Ruby symbols, both ways: compiler-checked
+//! tables, so a variant added to the core does not build until it is listed.
 use canary_machines::{Action, Guardrail, OnLimit, Outcome, Reason, Refusal};
-use magnus::{Error, Ruby, Symbol, Value};
 
-/// An enum whose variants travel as their `snake_case` symbol.
-pub trait Named: Copy + 'static {
-    /// Every variant; a parsed symbol names one of these.
-    const ALL: &'static [Self];
-    /// What the value is, for the messages of the errors it raises.
-    const WHAT: &'static str;
-    /// The variant's symbol name. An exhaustive match, so a new variant
-    /// does not compile until it has one.
-    fn name(self) -> &'static str;
-}
-
-/// `value` as its symbol.
-pub fn symbol<T: Named>(ruby: &Ruby, value: T) -> Symbol {
-    matryona_machines::ruby::symbol(ruby, value.name())
-}
-
-/// The variant a symbol names: `TypeError` for anything but a Symbol,
-/// `RangeError` for a symbol naming no variant.
-pub fn parse<T: Named>(ruby: &Ruby, value: Value) -> Result<T, Error> {
-    matryona_machines::ruby::parse(ruby, value, T::WHAT, T::ALL, T::name)
-}
-
-impl Named for Refusal {
-    const ALL: &'static [Self] = &[
-        Self::StaleGeneration,
-        Self::TimeRegression,
-        Self::Full,
-        Self::UnknownTest,
-        Self::WrongModel,
-        Self::Concluded,
-        Self::Overflow,
-    ];
-    const WHAT: &'static str = "a refusal";
-
-    fn name(self) -> &'static str {
-        match self {
-            Self::StaleGeneration => "stale_generation",
-            Self::TimeRegression => "time_regression",
-            Self::Full => "full",
-            Self::UnknownTest => "unknown_test",
-            Self::WrongModel => "wrong_model",
-            Self::Concluded => "concluded",
-            Self::Overflow => "overflow",
-        }
+matryona_machines::symbols! {
+    /// The core's refusals: the snake case of each variant.
+    pub Refusals for Refusal as "a refusal" {
+        StaleGeneration => "stale_generation",
+        TimeRegression => "time_regression",
+        Full => "full",
+        UnknownTest => "unknown_test",
+        WrongModel => "wrong_model",
+        Concluded => "concluded",
+        Overflow => "overflow",
     }
 }
 
-impl Named for OnLimit {
-    const ALL: &'static [Self] = &[Self::Hold, Self::Rollback, Self::Promote];
-    const WHAT: &'static str = "on_limit";
-
-    fn name(self) -> &'static str {
-        match self {
-            Self::Hold => "hold",
-            Self::Rollback => "rollback",
-            Self::Promote => "promote",
-        }
+matryona_machines::symbols! {
+    /// What a plan does when its limit is reached undecided.
+    pub OnLimits for OnLimit as "on_limit" {
+        Hold => "hold",
+        Rollback => "rollback",
+        Promote => "promote",
     }
 }
 
-impl Named for Outcome {
-    const ALL: &'static [Self] = &[
-        Self::Undecided,
-        Self::Cleared,
-        Self::Regressed,
-        Self::Truncated,
-    ];
-    const WHAT: &'static str = "an outcome";
-
-    fn name(self) -> &'static str {
-        match self {
-            Self::Undecided => "undecided",
-            Self::Cleared => "cleared",
-            Self::Regressed => "regressed",
-            Self::Truncated => "truncated",
-        }
+matryona_machines::symbols! {
+    /// Where one sequential test stands.
+    pub Outcomes for Outcome as "an outcome" {
+        Undecided => "undecided",
+        Cleared => "cleared",
+        Regressed => "regressed",
+        Truncated => "truncated",
     }
 }
 
-impl Named for Guardrail {
-    const ALL: &'static [Self] = &[Self::Clear, Self::NoData, Self::Breached];
-    const WHAT: &'static str = "a guardrail";
-
-    fn name(self) -> &'static str {
-        match self {
-            Self::Clear => "clear",
-            Self::NoData => "no_data",
-            Self::Breached => "breached",
-        }
+matryona_machines::symbols! {
+    /// The guardrail verdict a recommendation weighs.
+    pub Guardrails for Guardrail as "a guardrail" {
+        Clear => "clear",
+        NoData => "no_data",
+        Breached => "breached",
     }
 }
 
-impl Named for Action {
-    const ALL: &'static [Self] = &[Self::Continue, Self::Promote, Self::Rollback, Self::Hold];
-    const WHAT: &'static str = "an action";
-
-    fn name(self) -> &'static str {
-        match self {
-            Self::Continue => "continue",
-            Self::Promote => "promote",
-            Self::Rollback => "rollback",
-            Self::Hold => "hold",
-        }
+matryona_machines::symbols! {
+    /// What a recommendation says to do.
+    pub Actions for Action as "an action" {
+        Continue => "continue",
+        Promote => "promote",
+        Rollback => "rollback",
+        Hold => "hold",
     }
 }
 
-impl Named for Reason {
-    const ALL: &'static [Self] = &[
-        Self::Evidence,
-        Self::Limit,
-        Self::Guardrail,
-        Self::GuardrailNoData,
-        Self::Sampling,
-        Self::NoTests,
-    ];
-    const WHAT: &'static str = "a reason";
-
-    fn name(self) -> &'static str {
-        match self {
-            Self::Evidence => "evidence",
-            Self::Limit => "limit",
-            Self::Guardrail => "guardrail",
-            Self::GuardrailNoData => "guardrail_no_data",
-            Self::Sampling => "sampling",
-            Self::NoTests => "no_tests",
-        }
+matryona_machines::symbols! {
+    /// Why a recommendation says it.
+    pub Reasons for Reason as "a reason" {
+        Evidence => "evidence",
+        Limit => "limit",
+        Guardrail => "guardrail",
+        GuardrailNoData => "guardrail_no_data",
+        Sampling => "sampling",
+        NoTests => "no_tests",
     }
 }

@@ -3,6 +3,7 @@
 use core::time::Duration;
 
 use budget_machines::{Standing, State};
+use matryona_machines::testing::unchanged;
 
 use super::{paired, pairs, plan, tenfold, trials};
 use crate::{Action, Canary, Guardrail, OnLimit, Outcome, Reason, Recommendation, Refusal};
@@ -145,9 +146,10 @@ fn recommendation_follows_evidence_limits_and_guardrail() {
         canary.recommend(Guardrail::Breached),
         advice(Action::Rollback, Reason::Guardrail, None)
     );
-    let before = canary;
-    assert_eq!(canary.recommend(Guardrail::Clear), promote);
-    assert_eq!(canary, before);
+    assert_eq!(
+        unchanged(&mut canary, |c| c.recommend(Guardrail::Clear)),
+        promote
+    );
 
     assert_eq!(canary.restart(2), Ok(()));
     assert!(canary.observe(2, t(2), 0, trials(0, 31)).is_ok());

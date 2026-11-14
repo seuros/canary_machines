@@ -8,10 +8,10 @@ rust-version = "1.99"
 license = "MIT"
 [workspace.dependencies]
 canary-machines = { path = "ext/canary_machines_native/core" }
-matryona-machines = { version = ">=0.1", default-features = false }
+matryona-machines = { version = ">=0.2", default-features = false }
 magnus = { version = "0.9.3", default-features = false }
 rb-sys = { version = "0.9.130", default-features = false, features = ["stable-api-compiled-fallback"] }
-budget-machines = ">=0.5"
+budget-machines = ">=0.6"
 sliderule-machines = ">=0.2"
 [workspace.lints.rust]
 unsafe_code = "deny"
