@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.6.0](https://github.com/seuros/canary_machines/compare/canary_machines/v0.5.1...canary_machines/v0.6.0) (2026-11-14)
+
+
+### ⚠ BREAKING CHANGES
+
+* read sibling counts through own_or_sibling and models through which_fields
+
+### Features
+
+* read sibling counts through own_or_sibling and models through which_fields ([d1abfe5](https://github.com/seuros/canary_machines/commit/d1abfe5e281d6861fbf11b61f90010652f07b7d4))
+
 ## [0.5.1](https://github.com/seuros/canary_machines/compare/canary_machines/v0.5.0...canary_machines/v0.5.1) (2026-11-14)
 
 
