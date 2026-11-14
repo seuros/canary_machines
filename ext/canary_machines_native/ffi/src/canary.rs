@@ -2,10 +2,13 @@
 use std::cell::RefCell;
 
 use canary_machines::Observation;
-use magnus::{Error, Integer, Ruby, Value, prelude::*, typed_data::Obj};
+use core::time::Duration;
 
-use crate::classes::{classes, keep};
-use crate::{CAPACITY, Nanos, Number, answer, build, convert, index, nanos, symbols};
+use magnus::{Error, Integer, Ruby, Value, prelude::*, typed_data::Obj};
+use matryona_machines::ruby::{duration, integer, keep, nanoseconds};
+
+use crate::classes::classes;
+use crate::{CAPACITY, answer, build, convert, index, symbols};
 
 #[magnus::wrap(class = "CanaryMachines::Canary", free_immediately, size)]
 pub struct Canary {
@@ -13,10 +16,13 @@ pub struct Canary {
 }
 
 impl Canary {
-    pub const fn new(generation: Number) -> Self {
-        Self {
-            core: RefCell::new(canary_machines::Canary::new(generation.0)),
-        }
+    pub fn new(generation: Value) -> Result<Self, Error> {
+        Ok(Self {
+            core: RefCell::new(canary_machines::Canary::new(integer(
+                generation,
+                "generation",
+            )?)),
+        })
     }
 
     pub fn add(ruby: &Ruby, this: Obj<Self>, plan: Value) -> Result<Value, Error> {
@@ -32,14 +38,14 @@ impl Canary {
     fn observe(
         ruby: &Ruby,
         this: Obj<Self>,
-        (generation, at, test): (Number, Nanos, Number),
+        (generation, at, test): (u64, Duration, usize),
         observation: Observation,
     ) -> Result<Value, Error> {
         keep(
             ruby,
             this,
             &this.core,
-            |core| core.observe(generation.0, at.0, index(test), observation),
+            |core| core.observe(generation, at, test, observation),
             |outcome| answer(ruby, outcome, |seen| convert::status_value(ruby, &seen)),
         )
     }
@@ -47,27 +53,40 @@ impl Canary {
     pub fn observe_trials(
         ruby: &Ruby,
         this: Obj<Self>,
-        generation: Number,
-        at: Nanos,
-        test: Number,
+        generation: Value,
+        at: Value,
+        test: Value,
         counts: Value,
     ) -> Result<Value, Error> {
+        let coordinates = Self::coordinates(generation, at, test)?;
         this.check_frozen()?;
         let observation = Observation::Trials(convert::counts(ruby, counts)?);
-        Self::observe(ruby, this, (generation, at, test), observation)
+        Self::observe(ruby, this, coordinates, observation)
     }
 
     pub fn observe_pairs(
         ruby: &Ruby,
         this: Obj<Self>,
-        generation: Number,
-        at: Nanos,
-        test: Number,
+        generation: Value,
+        at: Value,
+        test: Value,
         pairs: Value,
     ) -> Result<Value, Error> {
+        let coordinates = Self::coordinates(generation, at, test)?;
         this.check_frozen()?;
         let observation = Observation::Pairs(convert::pairs(ruby, pairs)?);
-        Self::observe(ruby, this, (generation, at, test), observation)
+        Self::observe(ruby, this, coordinates, observation)
+    }
+
+    /// A look's generation, instant and test index, converted in that order.
+    fn coordinates(
+        generation: Value,
+        at: Value,
+        test: Value,
+    ) -> Result<(u64, Duration, usize), Error> {
+        let generation = integer(generation, "generation")?;
+        let at = duration(at, "at")?;
+        Ok((generation, at, index(integer(test, "test")?)))
     }
 
     pub fn recommend(ruby: &Ruby, this: &Self, guardrail: Value) -> Result<Value, Error> {
@@ -84,20 +103,23 @@ impl Canary {
         )
     }
 
-    pub fn restart(ruby: &Ruby, this: Obj<Self>, generation: Number) -> Result<Value, Error> {
+    pub fn restart(ruby: &Ruby, this: Obj<Self>, generation: Value) -> Result<Value, Error> {
+        let generation = integer(generation, "generation")?;
         this.check_frozen()?;
-        let outcome = this.core.borrow_mut().restart(generation.0);
+        let outcome = this.core.borrow_mut().restart(generation);
         answer(ruby, outcome, |()| Ok(ruby.to_symbol("ok").as_value()))
     }
 
-    pub fn plan(ruby: &Ruby, this: &Self, test: Number) -> Result<Option<Value>, Error> {
-        let plan = this.core.borrow().plan(index(test));
+    pub fn plan(ruby: &Ruby, this: &Self, test: Value) -> Result<Option<Value>, Error> {
+        let test = index(integer(test, "test")?);
+        let plan = this.core.borrow().plan(test);
         plan.map(|plan| convert::plan_value(ruby, &plan))
             .transpose()
     }
 
-    pub fn status(ruby: &Ruby, this: &Self, test: Number) -> Result<Option<Value>, Error> {
-        let seen = this.core.borrow().status(index(test));
+    pub fn status(ruby: &Ruby, this: &Self, test: Value) -> Result<Option<Value>, Error> {
+        let test = index(integer(test, "test")?);
+        let seen = this.core.borrow().status(test);
         seen.map(|seen| convert::status_value(ruby, &seen))
             .transpose()
     }
@@ -108,7 +130,7 @@ impl Canary {
 
     pub fn last(ruby: &Ruby, this: &Self) -> Option<Integer> {
         let last = this.core.borrow().last()?;
-        Some(nanos(ruby, last))
+        Some(nanoseconds(ruby, last))
     }
 
     pub fn size(&self) -> usize {

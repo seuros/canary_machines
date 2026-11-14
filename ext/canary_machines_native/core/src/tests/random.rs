@@ -1,7 +1,7 @@
 //! Randomized runs against the naive models, and simulated error rates.
 
 use super::{
-    model::{Fleet, Naive, Rng},
+    model::{Chance, Fleet, Naive, XorShift64},
     paired, pairs, plan, rate, reference,
     std::vec::Vec,
     trials,
@@ -19,12 +19,12 @@ const fn t(ticks: u64) -> Duration {
 const POLICIES: [OnLimit; 3] = [OnLimit::Hold, OnLimit::Rollback, OnLimit::Promote];
 const GUARDRAILS: [Guardrail; 3] = [Guardrail::Clear, Guardrail::NoData, Guardrail::Breached];
 
-fn small(rng: &mut Rng, bound: u64) -> u32 {
+fn small(rng: &mut XorShift64, bound: u64) -> u32 {
     u32::try_from(rng.below(bound)).unwrap_or(0)
 }
 
 /// A random plan and the naive test with the same parameters.
-fn random_test(rng: &mut Rng) -> (Plan, Naive) {
+fn random_test(rng: &mut XorShift64) -> (Plan, Naive) {
     let alpha = (small(rng, 20) + 1, 100);
     let beta = (small(rng, 20) + 1, 100);
     let limit = rng.below(400) + 1;
@@ -70,7 +70,7 @@ fn random_test(rng: &mut Rng) -> (Plan, Naive) {
 #[test]
 #[allow(clippy::cast_possible_truncation)]
 fn randomized_canary_matches_the_naive_model() {
-    let mut rng = Rng(0x00C0_FFEE);
+    let mut rng = XorShift64::new(0x00C0_FFEE);
     let mut doubtful = 0;
     let (mut cleared, mut regressed, mut truncated, mut refused) = (0, 0, 0, 0);
     for _ in 0..1500 {
@@ -173,11 +173,11 @@ fn randomized_canary_matches_the_naive_model() {
 
 /// Fraction of `runs` simulated rollouts that end with `outcome`, in thousandths.
 fn frequency(
-    rng: &mut Rng,
+    rng: &mut XorShift64,
     plan: Plan,
     outcome: Outcome,
     runs: u64,
-    mut draw: impl FnMut(&mut Rng) -> Observation,
+    mut draw: impl FnMut(&mut XorShift64) -> Observation,
 ) -> u64 {
     let mut seen = 0;
     for _ in 0..runs {
@@ -194,12 +194,13 @@ fn frequency(
 fn simulated_error_rates_respect_the_wald_bounds() {
     // alpha / (1 - beta) = beta / (1 - alpha) = 52.6 thousandths; the slack
     // covers three standard errors of a 4000-run estimate.
-    let mut rng = Rng(0xAB_CDEF);
+    let mut rng = XorShift64::new(0xAB_CDEF);
     let bound = 53 + 11;
     let plan_of = |model| plan(model, 1_000_000, OnLimit::Hold);
 
     let fixed = plan_of(reference((5, 100), (15, 100)));
-    let trial = |percent: u64| move |rng: &mut Rng| trials(u64::from(rng.chance(percent, 100)), 1);
+    let trial =
+        |percent: u64| move |rng: &mut XorShift64| trials(u64::from(rng.chance(percent, 100)), 1);
     assert!(frequency(&mut rng, fixed, Outcome::Regressed, 4000, trial(5)) <= bound);
     assert!(frequency(&mut rng, fixed, Outcome::Cleared, 4000, trial(15)) <= bound);
     // Composite hypotheses: better than acceptable, worse than unacceptable.
@@ -207,7 +208,7 @@ fn simulated_error_rates_respect_the_wald_bounds() {
     assert!(frequency(&mut rng, fixed, Outcome::Cleared, 4000, trial(30)) <= 10);
     // Looking only every 20 trials keeps the bounds.
     let batch = |percent: u64| {
-        move |rng: &mut Rng| {
+        move |rng: &mut XorShift64| {
             trials(
                 (0..20).map(|_| u64::from(rng.chance(percent, 100))).sum(),
                 20,
@@ -220,7 +221,7 @@ fn simulated_error_rates_respect_the_wald_bounds() {
     // Odds ratio 1 against 3, whatever the baseline's own failure rate is.
     let matched = plan_of(paired((1, 1), (3, 1)));
     let pair = |baseline: (u64, u64), canary: (u64, u64)| {
-        move |rng: &mut Rng| {
+        move |rng: &mut XorShift64| {
             let (b, c) = (
                 rng.chance(baseline.0, baseline.1),
                 rng.chance(canary.0, canary.1),

@@ -1,7 +1,7 @@
 //! Private native entry point.
 use canary_machines::FRACTION_BITS;
-use magnus::value::Opaque;
-use magnus::{Error, RClass, Ruby, Value, function, method, prelude::*};
+use magnus::{Error, Ruby, Value, function, method, prelude::*};
+use matryona_machines::ruby::Class;
 
 use crate::classes::{self, Classes};
 use crate::{CAPACITY, canary::Canary, convert, sprt::Sprt, values as parse};
@@ -48,7 +48,7 @@ plan_reader!(plan_lower_micro -> i64, |ruby, plan| Ok(plan.lower_micro()));
 plan_reader!(plan_bounds -> Value, |ruby, plan| convert::bounds_value(ruby, plan.bounds()));
 
 fn values(ruby: &Ruby, classes: &Classes) -> Result<(), Error> {
-    let class = |class: Opaque<RClass>| ruby.get_inner(class);
+    let class = |class: Class| class.get(ruby);
     class(classes.rate).define_private_method("__validate", method!(validate_rate, 0))?;
     class(classes.rate).define_singleton_method("failure_of", function!(convert::failure_of, 1))?;
     class(classes.odds).define_private_method("__validate", method!(validate_odds, 0))?;

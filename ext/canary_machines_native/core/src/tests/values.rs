@@ -3,7 +3,7 @@
 
 use core::{assert_matches, time::Duration};
 
-use super::{fraction, model::Rng, paired, pairs, plan, tenfold, trials};
+use super::{fraction, model::XorShift64, paired, pairs, plan, tenfold, trials};
 use crate::{
     Action, Bounds, Canary, Fraction, Guardrail, Look, OnLimit, Outcome, Reason, Recommendation,
     Refusal, Status,
@@ -56,7 +56,7 @@ fn accepted_back(canary: &Canary<4>) {
 
 #[test]
 fn everything_a_canary_produces_is_accepted_back() {
-    let mut rng = Rng(0x5EED_CA9A_8F3D_0001);
+    let mut rng = XorShift64::new(0x5EED_CA9A_8F3D_0001);
     for round in 0..300_u64 {
         let mut canary = Canary::<4>::new(0);
         accepted_back(&canary);

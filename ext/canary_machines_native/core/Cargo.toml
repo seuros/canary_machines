@@ -14,5 +14,8 @@ categories = ["no-std", "algorithms"]
 budget-machines.workspace = true
 sliderule-machines.workspace = true
 
+[dev-dependencies]
+matryona-machines = { workspace = true, features = ["testing"] }
+
 [lints]
 workspace = true

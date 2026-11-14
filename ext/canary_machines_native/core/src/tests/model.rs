@@ -10,23 +10,16 @@ use crate::{Action, Guardrail, OnLimit, Outcome, Reason, Recommendation, Refusal
 /// agree with the exact answer; such looks are not compared.
 const MARGIN: f64 = 1e-6;
 
-/// Deterministic xorshift64* generator.
-pub struct Rng(pub u64);
+pub use matryona_machines::testing::XorShift64;
 
-impl Rng {
-    pub fn next(&mut self) -> u64 {
-        self.0 ^= self.0 >> 12;
-        self.0 ^= self.0 << 25;
-        self.0 ^= self.0 >> 27;
-        self.0.wrapping_mul(0x2545_F491_4F6C_DD1D)
-    }
-
-    pub fn below(&mut self, bound: u64) -> u64 {
-        self.next() % bound
-    }
-
+/// A draw that is true with a stated probability.
+pub trait Chance {
     /// True with probability `num / den`.
-    pub fn chance(&mut self, num: u64, den: u64) -> bool {
+    fn chance(&mut self, num: u64, den: u64) -> bool;
+}
+
+impl Chance for XorShift64 {
+    fn chance(&mut self, num: u64, den: u64) -> bool {
         self.below(den) < num
     }
 }

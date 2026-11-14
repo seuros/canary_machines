@@ -15,30 +15,13 @@ pub trait Named: Copy + 'static {
 
 /// `value` as its symbol.
 pub fn symbol<T: Named>(ruby: &Ruby, value: T) -> Symbol {
-    ruby.to_symbol(value.name())
+    matryona_machines::ruby::symbol(ruby, value.name())
 }
 
 /// The variant a symbol names: `TypeError` for anything but a Symbol,
 /// `RangeError` for a symbol naming no variant.
 pub fn parse<T: Named>(ruby: &Ruby, value: Value) -> Result<T, Error> {
-    let symbol = Symbol::from_value(value).ok_or_else(|| {
-        Error::new(
-            ruby.exception_type_error(),
-            format!("{} must be a Symbol", T::WHAT),
-        )
-    })?;
-    let name = symbol.name()?;
-    T::ALL
-        .iter()
-        .copied()
-        .find(|variant| variant.name() == name)
-        .ok_or_else(|| {
-            let names: Vec<String> = T::ALL.iter().map(|v| format!(":{}", v.name())).collect();
-            Error::new(
-                ruby.exception_range_error(),
-                format!("{} must be one of {}", T::WHAT, names.join(", ")),
-            )
-        })
+    matryona_machines::ruby::parse(ruby, value, T::WHAT, T::ALL, T::name)
 }
 
 impl Named for Refusal {

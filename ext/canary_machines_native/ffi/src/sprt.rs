@@ -3,8 +3,8 @@ use std::cell::RefCell;
 
 use canary_machines::Observation;
 use magnus::{Error, Ruby, Symbol, Value, prelude::*, typed_data::Obj};
+use matryona_machines::ruby::keep;
 
-use crate::classes::keep;
 use crate::{answer, convert, symbols};
 
 #[magnus::wrap(class = "CanaryMachines::Sprt", free_immediately, size)]

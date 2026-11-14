@@ -3,7 +3,7 @@
 
 use sliderule_machines::ln_ratio;
 
-use super::{doubled, model::Rng, paired, plan, reference, tenfold, trials};
+use super::{doubled, model::XorShift64, paired, plan, reference, tenfold, trials};
 use crate::{FRACTION_BITS, Interval, Model, OnLimit, Plan, Sprt, micro_nats};
 
 fn kernel(nums: [u64; 2], dens: [u64; 2]) -> Interval {
@@ -21,9 +21,14 @@ fn real(value: i128) -> f64 {
 
 #[test]
 fn the_crates_logarithm_is_the_shared_kernel_at_48_fraction_bits() {
-    let mut rng = Rng(0x5EED);
+    let mut rng = XorShift64::new(0x5EED);
     for _ in 0..2_000 {
-        let (a, b, c, d) = (rng.next() | 1, rng.below(1000) + 1, rng.next() | 1, 7);
+        let (a, b, c, d) = (
+            rng.next_u64() | 1,
+            rng.below(1000) + 1,
+            rng.next_u64() | 1,
+            7,
+        );
         let interval = crate::ln::ln_ratio([a, b], [c, d]);
         assert_eq!(interval, kernel([a, b], [c, d]));
         assert!(interval.lo < interval.hi && interval.hi - interval.lo <= 2);
