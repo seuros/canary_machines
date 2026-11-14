@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.5.0](https://github.com/seuros/canary_machines/compare/canary_machines/v0.4.0...canary_machines/v0.5.0) (2026-11-14)
+
+
+### ⚠ BREAKING CHANGES
+
+* build the binding on matryona-machines 0.2; check frozen before converting arguments; compiler-checked symbol tables; read every value from the struct
+
+### Features
+
+* build the binding on matryona-machines 0.2; check frozen before converting arguments; compiler-checked symbol tables; read every value from the struct ([9c906a2](https://github.com/seuros/canary_machines/commit/9c906a2dfa31aae0b5103e149e839568be649758))
+
 ## [0.4.0](https://github.com/seuros/canary_machines/compare/canary_machines/v0.3.0...canary_machines/v0.4.0) (2026-11-14)
 
 
