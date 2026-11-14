@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.5.0](https://github.com/seuros/canary_machines/compare/canary-machines-v0.4.0...canary-machines-v0.5.0) (2026-11-14)
+
+
+### ⚠ BREAKING CHANGES
+
+* validate and seal every value, private core value fields, exact-class boundary, clone-then-keep observe
+
+### Features
+
+* validate and seal every value, private core value fields, exact-class boundary, clone-then-keep observe ([501009e](https://github.com/seuros/canary_machines/commit/501009e8521714c7e442b8cb8b101e2fc9a4b292))
+
 ## [0.4.0](https://github.com/seuros/canary_machines/compare/canary-machines-v0.3.0...canary-machines-v0.4.0) (2026-11-13)
 
 
