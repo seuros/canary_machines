@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/seuros/canary_machines/compare/canary_machines/v0.5.0...canary_machines/v0.5.1) (2026-11-14)
+
+
+### Bug Fixes
+
+* **deps:** require matryona-machines &gt;= 0.3 with which, optional_fields and a States table ([a280ca4](https://github.com/seuros/canary_machines/commit/a280ca4c91dec19861d28cc4fedea887d0c06ef1))
+
 ## [0.5.0](https://github.com/seuros/canary_machines/compare/canary_machines/v0.4.0...canary_machines/v0.5.0) (2026-11-14)
 
 
