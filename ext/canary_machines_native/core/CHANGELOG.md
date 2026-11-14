@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.6.0](https://github.com/seuros/canary_machines/compare/canary-machines-v0.5.0...canary-machines-v0.6.0) (2026-11-14)
+
+
+### ⚠ BREAKING CHANGES
+
+* build the binding on matryona-machines; drop the rb-sys feature; name every argument in conversion errors
+
+### Features
+
+* build the binding on matryona-machines; drop the rb-sys feature; name every argument in conversion errors ([76c96d0](https://github.com/seuros/canary_machines/commit/76c96d0c8d448372fbfa6375a5b358c6ecdbe50f))
+
 ## [0.5.0](https://github.com/seuros/canary_machines/compare/canary-machines-v0.4.0...canary-machines-v0.5.0) (2026-11-14)
 
 
