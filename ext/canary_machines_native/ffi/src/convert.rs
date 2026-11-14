@@ -4,7 +4,9 @@ use canary_machines::{
     Pairs, Plan, Rate, Standing, Status, micro_nats,
 };
 use magnus::{Error, Ruby, Symbol, Value, prelude::*};
-use matryona_machines::ruby::{Symbols, exact_fields, instance_of, integer, nanoseconds, which};
+use matryona_machines::ruby::{
+    Symbols, exact_fields, integer, nanoseconds, own_or_sibling, which_fields,
+};
 
 use crate::classes::classes;
 use crate::symbols::{Guardrails, OnLimits, Outcomes, States};
@@ -41,17 +43,8 @@ fn odds_value(ruby: &Ruby, odds: OddsRatio) -> Result<Value, Error> {
 pub fn counts(ruby: &Ruby, value: Value) -> Result<Counts, Error> {
     const MESSAGE: &str = "expected a Counts (good, total)";
     let own = classes(ruby)?.counts.get(ruby);
-    let (good, total): (u64, u64) = if instance_of(value, own) {
-        let [good, total] = exact_fields::<2>(ruby, value, own, MESSAGE)?;
-        (integer(good, "good")?, integer(total, "total")?)
-    } else if value.is_kind_of(own)
-        || !(value.respond_to("good", false)? && value.respond_to("total", false)?)
-    {
-        return Err(type_error(ruby, MESSAGE));
-    } else {
-        let good = integer(value.funcall("good", ())?, "good")?;
-        (good, integer(value.funcall("total", ())?, "total")?)
-    };
+    let [good, total] = own_or_sibling(ruby, value, own, ["good", "total"], MESSAGE)?;
+    let (good, total) = (integer(good, "good")?, integer(total, "total")?);
     Counts::new(good, total).ok_or_else(|| range_error(ruby, "good exceeds total"))
 }
 
@@ -73,20 +66,15 @@ pub fn model(ruby: &Ruby, value: Value) -> Result<Model, Error> {
     const MESSAGE: &str = "expected a CanaryMachines::Model::Reference or Model::Paired";
     let classes = classes(ruby)?;
     let held = [classes.reference.get(ruby), classes.paired.get(ruby)];
-    let Some(index) = which(value, &held) else {
-        return Err(type_error(ruby, MESSAGE));
-    };
-    let [acceptable, unacceptable] = exact_fields::<2>(ruby, value, held[index], MESSAGE)?;
-    Ok(if index == 0 {
-        Model::Reference {
+    Ok(match which_fields::<2>(ruby, value, &held, MESSAGE)? {
+        (0, [acceptable, unacceptable]) => Model::Reference {
             acceptable: rate(ruby, acceptable)?,
             unacceptable: rate(ruby, unacceptable)?,
-        }
-    } else {
-        Model::Paired {
+        },
+        (_, [acceptable, unacceptable]) => Model::Paired {
             acceptable: odds(ruby, acceptable)?,
             unacceptable: odds(ruby, unacceptable)?,
-        }
+        },
     })
 }
 

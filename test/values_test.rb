@@ -143,6 +143,23 @@ class ValuesTest < Minitest::Test
     assert_raises(RangeError) { window.checked_add(SiblingCounts.new(2, 1)) }
   end
 
+  # A sibling's readers are all asked for first, then all called, then
+  # converted: a value missing one runs none, and a bad answer from `good`
+  # is refused after `total` has run.
+  def test_sibling_counts_readers_run_before_conversion
+    calls = []
+    lopsided = Object.new
+    lopsided.define_singleton_method(:good) { (calls << :good) && '1' }
+    lopsided.define_singleton_method(:total) { (calls << :total) && 2 }
+    error = assert_raises(TypeError) { Counts.new(0, 1).checked_add(lopsided) }
+    assert_equal ['good must be an Integer', %i[good total]], [error.message, calls]
+    calls.clear
+    half = Object.new
+    half.define_singleton_method(:good) { (calls << :good) && 1 }
+    error = assert_raises(TypeError) { Counts.new(0, 1).checked_add(half) }
+    assert_equal ['expected a Counts (good, total)', []], [error.message, calls]
+  end
+
   # Sealing stops accidents, not reflection: a named subclass raises, yet
   # Ruby has already bound its constant, and `Data#initialize` can be bound
   # to skip the validating one. The binding refuses such a value by its
