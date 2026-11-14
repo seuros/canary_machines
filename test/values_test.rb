@@ -109,6 +109,17 @@ class ValuesTest < Minitest::Test
     ].each { |build| assert_raises(TypeError) { build.call } }
   end
 
+  def test_one_of_classes_and_nil_or_value_messages
+    model = 'expected a CanaryMachines::Model::Reference or Model::Paired'
+    [LEVEL, nil, :reference].each do |forged|
+      assert_equal model, assert_raises(TypeError) { Plan.new(forged, LEVEL, LEVEL, 10, :hold) }.message
+    end
+    assert_equal 'expected a CanaryMachines::Fraction', assert_raises(TypeError) { Bounds.new(LEVEL, nil) }.message
+    state = 'expected a budget state (:no_data, :quiet, :firing) or standing'
+    assert_equal state, assert_raises(RangeError) { Guardrail.from(:clear) }.message
+    assert_equal state, assert_raises(TypeError) { Guardrail.from(1) }.message
+  end
+
   # A subclass overriding `initialize`, or `allocate`, would build a value
   # that never ran the check.
   def test_values_are_final

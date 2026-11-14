@@ -3,8 +3,8 @@
 //! readers the core gives them.
 use canary_machines::{Bounds, Counts, Fraction, Interval, Look, Recommendation, Status};
 use core::time::Duration;
-use magnus::{Error, Ruby, Value, prelude::*};
-use matryona_machines::ruby::{Symbols, exact_fields, integer, optional};
+use magnus::{Error, Ruby, Value};
+use matryona_machines::ruby::{Symbols, exact_fields, integer, optional, optional_fields};
 
 use crate::classes::classes;
 use crate::symbols::{Actions, Outcomes, Reasons};
@@ -22,18 +22,25 @@ pub fn interval(ruby: &Ruby, value: Value) -> Result<Interval, Error> {
     Ok(Interval { lo, hi })
 }
 
+const FRACTION: &str = "expected a CanaryMachines::Fraction";
+
 pub fn fraction(ruby: &Ruby, value: Value) -> Result<Fraction, Error> {
-    let message = "expected a CanaryMachines::Fraction";
-    let [num, den] = exact_fields::<2>(ruby, value, classes(ruby)?.fraction.get(ruby), message)?;
+    let class = classes(ruby)?.fraction.get(ruby);
+    fraction_of(ruby, exact_fields::<2>(ruby, value, class, FRACTION)?)
+}
+
+/// A core `Fraction` from a `Fraction`'s fields, through `Fraction::new`.
+fn fraction_of(ruby: &Ruby, [num, den]: [Value; 2]) -> Result<Fraction, Error> {
     let (num, den) = (integer(num, "num")?, integer(den, "den")?);
     Fraction::new(num, den).ok_or_else(|| range_error(ruby, "a fraction needs den > 0"))
 }
 
+/// A bound: `nil`, or a `Fraction`.
 fn bound(ruby: &Ruby, value: Value) -> Result<Option<Fraction>, Error> {
-    if value.is_nil() {
-        return Ok(None);
-    }
-    fraction(ruby, value).map(Some)
+    let class = classes(ruby)?.fraction.get(ruby);
+    optional_fields::<2>(ruby, value, class, FRACTION)?
+        .map(|fields| fraction_of(ruby, fields))
+        .transpose()
 }
 
 pub fn bounds(ruby: &Ruby, value: Value) -> Result<Bounds, Error> {

@@ -1,6 +1,6 @@
 //! The core's unit-variant enums as Ruby symbols, both ways: compiler-checked
 //! tables, so a variant added to the core does not build until it is listed.
-use canary_machines::{Action, Guardrail, OnLimit, Outcome, Reason, Refusal};
+use canary_machines::{Action, Guardrail, OnLimit, Outcome, Reason, Refusal, State};
 
 matryona_machines::symbols! {
     /// The core's refusals: the snake case of each variant.
@@ -62,5 +62,14 @@ matryona_machines::symbols! {
         GuardrailNoData => "guardrail_no_data",
         Sampling => "sampling",
         NoTests => "no_tests",
+    }
+}
+
+matryona_machines::symbols! {
+    /// A `budget_machines` rule state, as `Guardrail.from` reads it.
+    pub States for State as "a budget state" {
+        NoData => "no_data",
+        Quiet => "quiet",
+        Firing => "firing",
     }
 }

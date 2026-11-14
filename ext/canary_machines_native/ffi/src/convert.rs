@@ -1,13 +1,13 @@
 //! Ruby `Data` values to core types and back.
 use canary_machines::{
     Bounds, Counts, Fraction, Guardrail, Interval, Invalid, Look, Model, Objective, OddsRatio,
-    Pairs, Plan, Rate, Standing, State, Status, micro_nats,
+    Pairs, Plan, Rate, Standing, Status, micro_nats,
 };
 use magnus::{Error, Ruby, Symbol, Value, prelude::*};
-use matryona_machines::ruby::{Symbols, exact_fields, instance_of, integer, nanoseconds};
+use matryona_machines::ruby::{Symbols, exact_fields, instance_of, integer, nanoseconds, which};
 
 use crate::classes::classes;
-use crate::symbols::{Guardrails, OnLimits, Outcomes};
+use crate::symbols::{Guardrails, OnLimits, Outcomes, States};
 use crate::{build, range_error, type_error};
 
 pub fn rate(ruby: &Ruby, value: Value) -> Result<Rate, Error> {
@@ -72,19 +72,21 @@ pub fn pairs(ruby: &Ruby, value: Value) -> Result<Pairs, Error> {
 pub fn model(ruby: &Ruby, value: Value) -> Result<Model, Error> {
     const MESSAGE: &str = "expected a CanaryMachines::Model::Reference or Model::Paired";
     let classes = classes(ruby)?;
-    let reference = classes.reference.get(ruby);
-    if instance_of(value, reference) {
-        let [acceptable, unacceptable] = exact_fields::<2>(ruby, value, reference, MESSAGE)?;
-        return Ok(Model::Reference {
+    let held = [classes.reference.get(ruby), classes.paired.get(ruby)];
+    let Some(index) = which(value, &held) else {
+        return Err(type_error(ruby, MESSAGE));
+    };
+    let [acceptable, unacceptable] = exact_fields::<2>(ruby, value, held[index], MESSAGE)?;
+    Ok(if index == 0 {
+        Model::Reference {
             acceptable: rate(ruby, acceptable)?,
             unacceptable: rate(ruby, unacceptable)?,
-        });
-    }
-    let paired = classes.paired.get(ruby);
-    let [acceptable, unacceptable] = exact_fields::<2>(ruby, value, paired, MESSAGE)?;
-    Ok(Model::Paired {
-        acceptable: odds(ruby, acceptable)?,
-        unacceptable: odds(ruby, unacceptable)?,
+        }
+    } else {
+        Model::Paired {
+            acceptable: odds(ruby, acceptable)?,
+            unacceptable: odds(ruby, unacceptable)?,
+        }
     })
 }
 
@@ -212,14 +214,10 @@ pub fn status_value(ruby: &Ruby, status: &Status) -> Result<Value, Error> {
 pub fn guardrail_from(ruby: &Ruby, value: Value) -> Result<Symbol, Error> {
     const MESSAGE: &str = "expected a budget state (:no_data, :quiet, :firing) or standing";
     let verdict = if let Some(symbol) = Symbol::from_value(value) {
-        match symbol.name()?.as_ref() {
-            // `State::NoData` and `Standing::NoData` are the same symbol
-            // and the same verdict.
-            "no_data" => Guardrail::from(State::NoData),
-            "quiet" => Guardrail::from(State::Quiet),
-            "firing" => Guardrail::from(State::Firing),
-            _ => return Err(range_error(ruby, MESSAGE)),
-        }
+        // `State::NoData` and `Standing::NoData` are the same symbol and the
+        // same verdict.
+        let state = States::variant(&symbol.name()?).ok_or_else(|| range_error(ruby, MESSAGE))?;
+        Guardrail::from(state)
     } else if value.respond_to("remaining", false)? {
         let remaining = integer(value.funcall("remaining", ())?, "remaining")?;
         Guardrail::from(Standing::Within { remaining })
