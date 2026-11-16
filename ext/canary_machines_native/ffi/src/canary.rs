@@ -30,9 +30,7 @@ impl Canary {
         this.check_frozen()?;
         let plan = convert::plan(ruby, plan)?;
         let outcome = this.core.borrow_mut().add(plan);
-        answer(ruby, outcome, |index| {
-            Ok(ruby.integer_from_u64(index as u64).as_value())
-        })
+        answer(ruby, outcome, |index| Ok(ruby.into_value(index)))
     }
 
     /// Clone-then-keep: the answer is a `Status` built through `new`.

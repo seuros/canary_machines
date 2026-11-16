@@ -274,13 +274,15 @@ impl Plan {
         if limit == 0 {
             return Err(Invalid::Limit);
         }
-        // ln(p1 / p0) and ln((1 - p1) / (1 - p0)).
+        // ln(p1 / p0) and ln((1 - p1) / (1 - p0)). Every rate is num < den
+        // (a `Rate`, or `num / (num + den)` with den > 0), so no `den - num`
+        // wraps; and every operand fits 33 bits, so no product here can.
         let hit = ln_ratio([alt_num, null_den], [alt_den, null_num]);
         let miss = ln_ratio(
             [alt_den - alt_num, null_den],
             [alt_den, null_den - null_num],
         );
-        if hit.lo <= 0 || miss.hi >= 0 {
+        if hit.lo() <= 0 || miss.hi() >= 0 {
             return Err(Invalid::Indistinguishable);
         }
         Ok(Self {
@@ -363,7 +365,7 @@ impl Plan {
     /// probabilities of [`hit`](Self::hit).
     ///
     /// The log-likelihood ratio after `h` hits and `m` misses lies between
-    /// `h * hit().lo + m * miss().lo` and `h * hit().hi + m * miss().hi`.
+    /// `h * hit().lo() + m * miss().lo()` and `h * hit().hi() + m * miss().hi()`.
     #[must_use]
     pub const fn miss(&self) -> Interval {
         self.miss
@@ -374,7 +376,7 @@ impl Plan {
     /// [`upper`](Self::upper).
     #[must_use]
     pub fn upper_micro(&self) -> i64 {
-        micro_nats(self.upper.hi)
+        micro_nats(self.upper.hi())
     }
 
     /// Log-likelihood ratio the evidence must fall to to count as cleared, in
@@ -382,13 +384,15 @@ impl Plan {
     /// [`lower`](Self::lower).
     #[must_use]
     pub fn lower_micro(&self) -> i64 {
-        micro_nats(self.lower.lo)
+        micro_nats(self.lower.lo())
     }
 
     /// The error bounds this plan guarantees; see [`Bounds`].
     #[must_use]
     pub fn bounds(&self) -> Bounds {
         let ((alpha_num, alpha_den), (beta_num, beta_den)) = (self.alpha.wide(), self.beta.wide());
+        // `Rate` keeps num < den < 2^32: differences stay positive, products
+        // of two such values fit 64 bits.
         let false_rollback = Fraction {
             num: alpha_num * beta_den,
             den: alpha_den * (beta_den - beta_num),

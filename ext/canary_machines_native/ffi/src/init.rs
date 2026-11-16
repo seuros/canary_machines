@@ -56,7 +56,9 @@ fn values(ruby: &Ruby, classes: &Classes) -> Result<(), Error> {
     counts.define_private_method("__validate", method!(validate_counts, 0))?;
     counts.define_method("bad", method!(parse::bad, 0))?;
     counts.define_method("checked_add", method!(parse::checked_add, 1))?;
-    class(classes.pairs).define_private_method("__validate", method!(validate_pairs, 0))?;
+    let pairs = class(classes.pairs);
+    pairs.define_private_method("__validate", method!(validate_pairs, 0))?;
+    pairs.define_method("total", method!(parse::pairs_total, 0))?;
     for model in [classes.reference, classes.paired] {
         class(model).define_private_method("__validate", method!(validate_model, 0))?;
     }

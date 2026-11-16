@@ -51,6 +51,7 @@ impl Pairs {
     /// All pairs.
     #[must_use]
     pub const fn total(self) -> u64 {
+        // `new` refuses counts whose sum does not fit 64 bits.
         self.canary_only + self.baseline_only + self.concordant
     }
 }
@@ -243,9 +244,9 @@ impl Sprt {
         // hits and misses never exceed samples, so these cannot wrap.
         let (hits, misses) = (self.hits + hits, self.misses + misses);
         let (lo, hi) = self.bracket(hits, misses);
-        self.outcome = if lo >= self.plan.upper().hi {
+        self.outcome = if lo >= self.plan.upper().hi() {
             Outcome::Regressed
-        } else if hi <= self.plan.lower().lo {
+        } else if hi <= self.plan.lower().lo() {
             Outcome::Cleared
         } else if samples >= self.plan.limit() {
             Outcome::Truncated
@@ -267,8 +268,8 @@ impl Sprt {
         let (hits, misses) = (i128::from(hits), i128::from(misses));
         let (hit, miss) = (self.plan.hit(), self.plan.miss());
         (
-            hits * hit.lo + misses * miss.lo,
-            hits * hit.hi + misses * miss.hi,
+            hits * hit.lo() + misses * miss.lo(),
+            hits * hit.hi() + misses * miss.hi(),
         )
     }
 }

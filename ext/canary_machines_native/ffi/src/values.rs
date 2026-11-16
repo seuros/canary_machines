@@ -10,16 +10,13 @@ use crate::classes::classes;
 use crate::symbols::{Actions, Outcomes, Reasons};
 use crate::{build, convert, range_error};
 
-/// The sibling `sliderule_machines::Interval` has public fields and no
-/// constructor; an interval holds its value only when `lo <= hi`.
+/// An `Interval` through the sibling's `sliderule_machines::Interval::new`,
+/// which refuses `lo > hi`.
 pub fn interval(ruby: &Ruby, value: Value) -> Result<Interval, Error> {
     let message = "expected a CanaryMachines::Interval";
     let [lo, hi] = exact_fields::<2>(ruby, value, classes(ruby)?.interval.get(ruby), message)?;
-    let (lo, hi): (i128, i128) = (integer(lo, "lo")?, integer(hi, "hi")?);
-    if lo > hi {
-        return Err(range_error(ruby, "an interval needs lo <= hi"));
-    }
-    Ok(Interval { lo, hi })
+    let (lo, hi) = (integer(lo, "lo")?, integer(hi, "hi")?);
+    Interval::new(lo, hi).ok_or_else(|| range_error(ruby, "an interval needs lo <= hi"))
 }
 
 const FRACTION: &str = "expected a CanaryMachines::Fraction";
@@ -105,6 +102,11 @@ pub fn checked_add(ruby: &Ruby, this: Value, other: Value) -> Result<Option<Valu
 /// `Counts#bad`.
 pub fn bad(ruby: &Ruby, this: Value) -> Result<u64, Error> {
     Ok(convert::counts(ruby, this)?.bad())
+}
+
+/// `Pairs#total`: the core's `Pairs::total`.
+pub fn pairs_total(ruby: &Ruby, this: Value) -> Result<u64, Error> {
+    Ok(convert::pairs(ruby, this)?.total())
 }
 
 /// `Look#decided?`: the core's `Look::is_decided`.

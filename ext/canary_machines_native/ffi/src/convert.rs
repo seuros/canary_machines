@@ -3,9 +3,10 @@ use canary_machines::{
     Bounds, Counts, Fraction, Guardrail, Interval, Invalid, Look, Model, Objective, OddsRatio,
     Pairs, Plan, Rate, Standing, Status, micro_nats,
 };
-use magnus::{Error, Ruby, Symbol, Value, prelude::*};
+use magnus::{Error, Ruby, Symbol, Value};
 use matryona_machines::ruby::{
-    Symbols, exact_fields, integer, nanoseconds, own_or_sibling, which_fields,
+    Symbols, exact_fields, integer, nanoseconds, own_or_sibling_default, sibling, sibling_shape,
+    which_fields,
 };
 
 use crate::classes::classes;
@@ -39,11 +40,11 @@ fn odds_value(ruby: &Ruby, odds: OddsRatio) -> Result<Value, Error> {
 /// must be exactly that class (a subclass of it is a forgery) and is read
 /// from its fields; anything else with `good` and `total` readers is a
 /// sibling's value, a `BudgetMachines::Counts` included, and is read by duck
-/// typing. Either way the core's constructor judges the numbers.
+/// typing. Either way the core's constructor judges the numbers. Refused:
+/// `"expected a CanaryMachines::Counts or a value with #good, #total"`.
 pub fn counts(ruby: &Ruby, value: Value) -> Result<Counts, Error> {
-    const MESSAGE: &str = "expected a Counts (good, total)";
     let own = classes(ruby)?.counts.get(ruby);
-    let [good, total] = own_or_sibling(ruby, value, own, ["good", "total"], MESSAGE)?;
+    let [good, total] = own_or_sibling_default(ruby, value, own, ["good", "total"])?;
     let (good, total) = (integer(good, "good")?, integer(total, "total")?);
     Counts::new(good, total).ok_or_else(|| range_error(ruby, "good exceeds total"))
 }
@@ -149,8 +150,8 @@ pub fn interval_value(ruby: &Ruby, interval: Interval) -> Result<Value, Error> {
         ruby,
         classes(ruby)?.interval,
         (
-            ruby.integer_from_i128(interval.lo),
-            ruby.integer_from_i128(interval.hi),
+            ruby.integer_from_i128(interval.lo()),
+            ruby.integer_from_i128(interval.hi()),
         ),
     )
 }
@@ -197,6 +198,9 @@ pub fn status_value(ruby: &Ruby, status: &Status) -> Result<Value, Error> {
     )
 }
 
+/// A `budget_machines` standing's two shapes, told apart by their reader.
+const STANDINGS: [&[&str]; 2] = [&["remaining"], &["overspent"]];
+
 /// `Guardrail.from`: the core's `From<State>` and `From<Standing>`, read
 /// from a `budget_machines` rule state or account standing by duck typing.
 pub fn guardrail_from(ruby: &Ruby, value: Value) -> Result<Symbol, Error> {
@@ -206,14 +210,19 @@ pub fn guardrail_from(ruby: &Ruby, value: Value) -> Result<Symbol, Error> {
         // same verdict.
         let state = States::variant(&symbol.name()?).ok_or_else(|| range_error(ruby, MESSAGE))?;
         Guardrail::from(state)
-    } else if value.respond_to("remaining", false)? {
-        let remaining = integer(value.funcall("remaining", ())?, "remaining")?;
-        Guardrail::from(Standing::Within { remaining })
-    } else if value.respond_to("overspent", false)? {
-        let overspent = integer(value.funcall("overspent", ())?, "overspent")?;
-        Guardrail::from(Standing::Exhausted { overspent })
     } else {
-        return Err(type_error(ruby, MESSAGE));
+        let Some((index, shape)) = sibling_shape(value, &STANDINGS)? else {
+            return Err(type_error(ruby, MESSAGE));
+        };
+        let [field] = shape.read::<1>(ruby, MESSAGE)?;
+        Guardrail::from(match index {
+            0 => Standing::Within {
+                remaining: integer(field, "remaining")?,
+            },
+            _ => Standing::Exhausted {
+                overspent: integer(field, "overspent")?,
+            },
+        })
     };
     Ok(Guardrails::symbol(ruby, verdict))
 }
@@ -221,11 +230,9 @@ pub fn guardrail_from(ruby: &Ruby, value: Value) -> Result<Symbol, Error> {
 /// `Rate.failure_of`: read from anything with an objective's `good` and
 /// `per` readers. `nil` for an objective that tolerates every event.
 pub fn failure_of(ruby: &Ruby, objective: Value) -> Result<Option<Value>, Error> {
-    if !(objective.respond_to("good", false)? && objective.respond_to("per", false)?) {
-        return Err(type_error(ruby, "expected an Objective (good, per)"));
-    }
-    let good = integer(objective.funcall("good", ())?, "good")?;
-    let per = integer(objective.funcall("per", ())?, "per")?;
+    let message = "expected an Objective (good, per)";
+    let [good, per] = sibling(ruby, objective, ["good", "per"], message)?;
+    let (good, per) = (integer(good, "good")?, integer(per, "per")?);
     let objective =
         Objective::new(good, per).ok_or_else(|| range_error(ruby, "objective needs good < per"))?;
     Rate::failure_of(objective)

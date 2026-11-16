@@ -78,10 +78,10 @@ let plan = Plan::new(model, rate(5, 100), rate(5, 100), 1000, OnLimit::Hold).exp
 // ln((1 - beta) / alpha) = ln(95/100 * 100/5), factor for factor.
 let upper: Interval = ln_ratio::<FRACTION_BITS>(&[95, 100], &[100, 5]);
 assert_eq!(plan.upper(), upper);
-assert_eq!(plan.upper_micro(), micro_nats(upper.hi));
-assert_eq!(plan.lower_micro(), micro_nats(plan.lower().lo));
+assert_eq!(plan.upper_micro(), micro_nats(upper.hi()));
+assert_eq!(plan.lower_micro(), micro_nats(plan.lower().lo()));
 // One failure weighs ln(p1 / p0) = ln(10): not enough alone to reach ln(19).
-assert!(plan.hit().hi < plan.upper().lo);
+assert!(plan.hit().hi() < plan.upper().lo());
 ```
 
 ## Use
@@ -141,6 +141,6 @@ has a validating `new` answering `None` for fields no test, plan or
 given and a binding can hold a rebuilt value to the same rule. `Look::is_decided` and `Status::is_decided` say whether an
 outcome has latched.
 
-This is a policy core with an initial, unstable API. It cannot check that the
+This is a pre-1.0 policy core (breaking changes land in minor versions). It cannot check that the
 sampling model holds, and it does not collect metrics, shift traffic, promote
 or roll back.

@@ -6,8 +6,11 @@ Gem::Specification.new do |spec|
   spec.version = CanaryMachines::VERSION
   spec.authors = ['Abdelkader Boudih']
   spec.email = ['oss@seuros.com']
-  spec.summary = 'Initial native sequential canary tests with stated error bounds'
-  spec.description = 'Unstable sequential Bernoulli regression tests that recommend; never a deployer.'
+  spec.summary = 'Sequential canary analysis with stated error bounds for Ruby'
+  spec.description = 'Sequential probability ratio tests over Bernoulli trials and matched pairs, with the ' \
+                     'false-rollback and false-promote rates fixed before the first sample, bound to Ruby ' \
+                     'from the no_std canary-machines crate. A canary of several tests recommends promote, ' \
+                     'roll back, continue or hold; it never touches the deployment.'
   spec.homepage = 'https://github.com/seuros/canary_machines'
   spec.license = 'MIT'
   spec.required_ruby_version = '>= 4.0.0'

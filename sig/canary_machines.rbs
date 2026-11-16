@@ -48,6 +48,9 @@ module CanaryMachines
                 | (num: Integer, den: Integer) -> Rate
     # The failure rate an objective tolerates; nil when it tolerates every event.
     def self.failure_of: (_Objective objective) -> Rate?
+    # Native: the core constructor checks every field; TypeError or
+    # RangeError, nil when valid.
+    private def __validate: () -> nil
   end
 
   # Both parts in 1..2**32-1; anything else raises TypeError or RangeError.
@@ -56,6 +59,9 @@ module CanaryMachines
     attr_reader den: Integer
     def self.new: (Integer num, Integer den) -> OddsRatio
                 | (num: Integer, den: Integer) -> OddsRatio
+    # Native: the core constructor checks every field; TypeError or
+    # RangeError, nil when valid.
+    private def __validate: () -> nil
   end
 
   # `good <= total`, both in 0..2**64-1; anything else raises TypeError or RangeError.
@@ -67,6 +73,9 @@ module CanaryMachines
     def bad: () -> Integer
     # This gem's Counts, whatever counts `other` is; nil when a sum would pass 2**64-1.
     def checked_add: (_Counts other) -> Counts?
+    # Native: the core constructor checks every field; TypeError or
+    # RangeError, nil when valid.
+    private def __validate: () -> nil
   end
 
   # Three counts in 0..2**64-1 whose sum is too; anything else raises.
@@ -77,6 +86,9 @@ module CanaryMachines
     def self.new: (Integer canary_only, Integer baseline_only, Integer concordant) -> Pairs
                 | (canary_only: Integer, baseline_only: Integer, concordant: Integer) -> Pairs
     def total: () -> Integer
+    # Native: the core constructor checks every field; TypeError or
+    # RangeError, nil when valid.
+    private def __validate: () -> nil
   end
 
   module Model
@@ -85,6 +97,9 @@ module CanaryMachines
       attr_reader unacceptable: Rate
       def self.new: (Rate acceptable, Rate unacceptable) -> Reference
                   | (acceptable: Rate, unacceptable: Rate) -> Reference
+      # Native: the core constructor checks every field; TypeError or
+      # RangeError, nil when valid.
+      private def __validate: () -> nil
     end
 
     class Paired < Data
@@ -92,6 +107,9 @@ module CanaryMachines
       attr_reader unacceptable: OddsRatio
       def self.new: (OddsRatio acceptable, OddsRatio unacceptable) -> Paired
                   | (acceptable: OddsRatio, unacceptable: OddsRatio) -> Paired
+      # Native: the core constructor checks every field; TypeError or
+      # RangeError, nil when valid.
+      private def __validate: () -> nil
     end
   end
 
@@ -101,6 +119,9 @@ module CanaryMachines
     attr_reader hi: Integer
     def self.new: (Integer lo, Integer hi) -> Interval
                 | (lo: Integer, hi: Integer) -> Interval
+    # Native: the core constructor checks every field; TypeError or
+    # RangeError, nil when valid.
+    private def __validate: () -> nil
   end
 
   # `Fraction::new`: both in 0..2**64-1, `den > 0`.
@@ -109,6 +130,9 @@ module CanaryMachines
     attr_reader den: Integer
     def self.new: (Integer num, Integer den) -> Fraction
                 | (num: Integer, den: Integer) -> Fraction
+    # Native: the core constructor checks every field; TypeError or
+    # RangeError, nil when valid.
+    private def __validate: () -> nil
   end
 
   # `Bounds::new`: never both nil; each Fraction strictly between 0 and 1.
@@ -117,6 +141,9 @@ module CanaryMachines
     attr_reader false_promote: Fraction?
     def self.new: (Fraction? false_rollback, Fraction? false_promote) -> Bounds
                 | (false_rollback: Fraction?, false_promote: Fraction?) -> Bounds
+    # Native: the core constructor checks every field; TypeError or
+    # RangeError, nil when valid.
+    private def __validate: () -> nil
   end
 
   # The arguments of the core's `Plan::new`, in order. Raises RangeError when
@@ -137,6 +164,9 @@ module CanaryMachines
     def upper_micro: () -> Integer
     def lower_micro: () -> Integer
     def bounds: () -> Bounds
+    # Native: the core constructor checks every field; TypeError or
+    # RangeError, nil when valid.
+    private def __validate: () -> nil
   end
 
   # `Look::new`: RangeError for hits + misses beyond samples, a decided
@@ -153,6 +183,9 @@ module CanaryMachines
                 | (outcome: outcome, hits: Integer, misses: Integer, samples: Integer, llr_micro: Integer) -> Look
     # The core's `Look::is_decided`: anything but :undecided.
     def decided?: () -> bool
+    # Native: the core constructor checks every field; TypeError or
+    # RangeError, nil when valid.
+    private def __validate: () -> nil
   end
 
   # `Status::new`: RangeError unless decided_at is present exactly when the look is decided.
@@ -164,6 +197,9 @@ module CanaryMachines
                 | (look: Look, decided_at: Integer?) -> Status
     # The core's `Status::is_decided`.
     def decided?: () -> bool
+    # Native: the core constructor checks every field; TypeError or
+    # RangeError, nil when valid.
+    private def __validate: () -> nil
   end
 
   # `Recommendation::new`: RangeError for a combination `recommend` never gives.
@@ -173,13 +209,26 @@ module CanaryMachines
     attr_reader test: Integer?
     def self.new: (action action, reason reason, Integer? test) -> Recommendation
                 | (action: action, reason: reason, test: Integer?) -> Recommendation
+    # Native: the core constructor checks every field; TypeError or
+    # RangeError, nil when valid.
+    private def __validate: () -> nil
   end
 
   module Guardrail
     # The core's `From<State>` and `From<Standing>`: a budget rule state
     # (:no_data, :quiet, :firing) or an account standing (:no_data, or a value
     # with a `remaining` or an `overspent` reader).
-    def self.from: (untyped state_or_standing) -> guardrail
+    # A budget_machines `Standing::Within`, read by its reader.
+    interface _Within
+      def remaining: () -> Integer
+    end
+
+    # A budget_machines `Standing::Exhausted`, read by its reader.
+    interface _Exhausted
+      def overspent: () -> Integer
+    end
+
+    def self.from: (:no_data | :quiet | :firing | _Within | _Exhausted state_or_standing) -> guardrail
   end
 
   # One sequential test on its own.

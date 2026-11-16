@@ -143,6 +143,14 @@ class ValuesTest < Minitest::Test
     assert_raises(RangeError) { window.checked_add(SiblingCounts.new(2, 1)) }
   end
 
+  # `Pairs#total` is the core's: it reads the fields, not the readers, so a
+  # redefined reader cannot change it, and the 64-bit sum is exact.
+  def test_pairs_total_is_native
+    pairs = Pairs.new(1, 2, 500)
+    with_raising_readers(Pairs) { assert_equal 503, pairs.total }
+    assert_equal 2**64 - 1, Pairs.new(2**63, 2**62, 2**62 - 1).total
+  end
+
   # A sibling's readers are all asked for first, then all called, then
   # converted: a value missing one runs none, and a bad answer from `good`
   # is refused after `total` has run.
@@ -157,7 +165,22 @@ class ValuesTest < Minitest::Test
     half = Object.new
     half.define_singleton_method(:good) { (calls << :good) && 1 }
     error = assert_raises(TypeError) { Counts.new(0, 1).checked_add(half) }
-    assert_equal ['expected a Counts (good, total)', []], [error.message, calls]
+    assert_equal ['expected a CanaryMachines::Counts or a value with #good, #total', []], [error.message, calls]
+  end
+
+  # An objective and a standing are only ever a sibling's: every reader of
+  # a shape is asked for before any runs, and a private one is not public.
+  def test_sibling_objective_and_standing_readers_are_asked_for_first
+    calls = []
+    half = Object.new
+    half.define_singleton_method(:good) { (calls << :good) && 1 }
+    error = assert_raises(TypeError) { Rate.failure_of(half) }
+    assert_equal ['expected an Objective (good, per)', []], [error.message, calls]
+    hidden = Class.new { private def remaining = raise('called') }.new
+    error = assert_raises(TypeError) { Guardrail.from(hidden) }
+    assert_equal 'expected a budget state (:no_data, :quiet, :firing) or standing', error.message
+    both = Struct.new(:remaining, :overspent).new(5, 1)
+    assert_equal :clear, Guardrail.from(both)
   end
 
   # Sealing stops accidents, not reflection: a named subclass raises, yet
@@ -316,20 +339,39 @@ class ValuesTest < Minitest::Test
 
   # Runs the block with `klass.new` calling `hook` first, once; the original
   # `new` is restored afterwards.
-  def replacing(klass, hook)
+  def replacing(klass, hook, &)
     original = klass.method(:new)
     armed = true
-    klass.define_singleton_method(:new) do |*args, **kw|
+    body = proc do |*args, **kw|
       if armed
         armed = false
         hook.call(*args)
       end
       original.call(*args, **kw)
     end
+    redefining(klass.singleton_class, new: body, &)
+  end
+
+  # Runs the block with each method of `klass` named in `bodies` replaced by
+  # its body, then restores the originals.
+  def redefining(klass, **bodies)
+    originals = bodies.to_h { |name, _| [name, klass.instance_method(name)] }
+    bodies.each { |name, body| replace_method(klass, name, body) }
     yield
   ensure
-    klass.singleton_class.send(:remove_method, :new)
-    klass.define_singleton_method(:new, original)
+    originals&.each { |name, method| replace_method(klass, name, (method if method.owner == klass)) }
+  end
+
+  # Defines `name` on `klass` as `body` (removes it when `body` is nil),
+  # removing the method `klass` itself holds first. Ruby warns about the
+  # redefinition, deliberate here, so warnings are off for the swap alone.
+  def replace_method(klass, name, body)
+    verbose = $VERBOSE
+    $VERBOSE = nil
+    klass.remove_method(name) if klass.method_defined?(name, false) || klass.private_method_defined?(name, false)
+    klass.define_method(name, body) if body
+  ensure
+    $VERBOSE = verbose
   end
 
   # An instance of `klass` holding `fields`, loaded by Marshal from a look-alike

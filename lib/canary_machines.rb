@@ -35,11 +35,10 @@ module CanaryMachines
     include Validated
   end
 
-  # Outcomes of matched baseline/canary pairs. The three counts sum within 64 bits.
+  # Outcomes of matched baseline/canary pairs. The three counts sum within
+  # 64 bits. `total` is native, the core's `Pairs::total`.
   Pairs = Data.define(:canary_only, :baseline_only, :concordant) do
     include Validated
-
-    def total = canary_only + baseline_only + concordant
   end
 
   # The sampling model a test assumes, with its two simple hypotheses.
