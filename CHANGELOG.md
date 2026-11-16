@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.1](https://github.com/seuros/canary_machines/compare/canary_machines/v0.7.0...canary_machines/v0.7.1) (2026-11-16)
+
+
+### Bug Fixes
+
+* fix wrapped classes at load so building a value runs no Ruby ([a5f164c](https://github.com/seuros/canary_machines/commit/a5f164c47525c8de405b5fcbc67ade83bb53375f))
+
 ## [0.7.0](https://github.com/seuros/canary_machines/compare/canary_machines/v0.6.0...canary_machines/v0.7.0) (2026-11-16)
 
 
