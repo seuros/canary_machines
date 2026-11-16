@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.7.0](https://github.com/seuros/canary_machines/compare/canary_machines/v0.6.0...canary_machines/v0.7.0) (2026-11-16)
+
+
+### ⚠ BREAKING CHANGES
+
+* Interval reads through lo()/hi(), Pairs#total is native
+
+### Features
+
+* Interval reads through lo()/hi(), Pairs#total is native ([4616d48](https://github.com/seuros/canary_machines/commit/4616d4808519f946bc3a9f31403249ae9bb6e9a4))
+
 ## [0.6.0](https://github.com/seuros/canary_machines/compare/canary_machines/v0.5.1...canary_machines/v0.6.0) (2026-11-14)
 
 
