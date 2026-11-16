@@ -106,6 +106,8 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
     class.define_method("observe_trials", method!(Sprt::observe_trials, 1))?;
     class.define_method("observe_pairs", method!(Sprt::observe_pairs, 1))?;
     class.define_method("reset", method!(Sprt::reset, 0))?;
+    // Fix magnus's class for Sprt now: building one later runs no Ruby.
+    Class::pin_wrapped::<Sprt>(ruby, class)?;
 
     let class = module.define_class("Canary", ruby.class_object())?;
     class.undef_default_alloc_func();
@@ -122,5 +124,5 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
     class.define_method("size", method!(Canary::size, 0))?;
     class.define_method("empty?", method!(Canary::is_empty, 0))?;
     class.define_method("capacity", method!(Canary::capacity, 0))?;
-    Ok(())
+    Class::pin_wrapped::<Canary>(ruby, class).map(drop)
 }
